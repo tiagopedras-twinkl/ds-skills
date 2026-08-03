@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Design snapshot manifest",
+  "description": "Describes one dated design system snapshot: its source, contents, and anything that could not be mapped.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generator", "exportedAt", "spec", "source", "collections", "files", "counts", "notes"],
+  "properties": {
+    "schemaVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["skill", "skillVersion"],
+      "properties": {
+        "skill": { "type": "string", "const": "ds-snapshot" },
+        "skillVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" }
+      }
+    },
+    "exportedAt": {
+      "type": "string",
+      "description": "UTC ISO 8601 timestamp. The only field expected to change when Figma has not changed.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["designTokens"],
+      "properties": {
+        "designTokens": { "type": "string", "const": "2025.10" }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["figmaFileName", "figmaFileKey", "figmaLastModified", "transport"],
+      "properties": {
+        "figmaFileName": { "type": "string", "minLength": 1 },
+        "figmaFileKey": { "type": "string" },
+        "figmaLastModified": { "type": "string" },
+        "transport": { "type": "string", "enum": ["desktop-bridge", "rest"] }
+      }
+    },
+    "collections": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "name", "defaultMode", "modes", "variableCount"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$" },
+          "name": { "type": "string", "minLength": 1 },
+          "defaultMode": { "type": "string", "minLength": 1 },
+          "modes": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "variableCount": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "minItems": 4,
+      "description": "Every file in the snapshot and nothing else.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "kind"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "kind": {
+            "type": "string",
+            "enum": ["tokens-default", "tokens-mode", "typography", "components"]
+          },
+          "collection": { "type": "string" },
+          "mode": { "type": "string" }
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["variables", "typographyStyles", "components", "componentSets"],
+      "properties": {
+        "variables": { "type": "integer", "minimum": 0 },
+        "typographyStyles": { "type": "integer", "minimum": 0 },
+        "components": { "type": "integer", "minimum": 0 },
+        "componentSets": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "notes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["nonStandardTypes", "unmapped"],
+      "properties": {
+        "nonStandardTypes": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "unmapped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "name", "reason"],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["variable", "textStyle", "component", "collection", "mode"]
+              },
+              "name": { "type": "string", "minLength": 1 },
+              "reason": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    }
+  }
+}

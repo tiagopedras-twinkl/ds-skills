@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Design snapshot component inventory",
+  "description": "Inventory of published Figma components and component sets. Inventory only: no layout properties, spec values, or token bindings.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "components"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "components": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/component" }
+    }
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "path",
+        "kind",
+        "variants",
+        "variantCombinations",
+        "description",
+        "deprecated",
+        "figma"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Slug of the full Figma name, keeping / as the group separator. Unique within the file and stable across runs.",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Last segment of the Figma name."
+        },
+        "path": {
+          "type": "array",
+          "description": "Preceding segments of the Figma name, in order. Empty for a top-level component.",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "kind": {
+          "type": "string",
+          "enum": ["component", "componentSet"]
+        },
+        "variants": {
+          "type": "object",
+          "description": "Variant axis name to its sorted list of values. Empty object for a plain component.",
+          "additionalProperties": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string" }
+          }
+        },
+        "variantCombinations": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of variants the set actually contains, not the product of the axes."
+        },
+        "description": { "type": "string" },
+        "deprecated": {
+          "type": "boolean",
+          "description": "True when the name or description contains 'deprecated', case-insensitive."
+        },
+        "figma": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["nodeId", "key"],
+          "properties": {
+            "nodeId": { "type": "string" },
+            "key": {
+              "type": "string",
+              "description": "Empty string when the transport cannot supply it."
+            }
+          }
+        }
+      }
+    }
+  }
+}
