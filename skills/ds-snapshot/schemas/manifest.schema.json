@@ -4,7 +4,7 @@
   "description": "Describes one dated design system snapshot: its source, contents, and anything that could not be mapped.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "generator", "exportedAt", "spec", "source", "collections", "files", "counts", "notes"],
+  "required": ["schemaVersion", "generator", "exportedAt", "spec", "source", "collections", "files", "counts", "dependencies", "notes"],
   "properties": {
     "schemaVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
     "generator": {
@@ -72,7 +72,7 @@
           "path": { "type": "string", "minLength": 1 },
           "kind": {
             "type": "string",
-            "enum": ["tokens-default", "tokens-mode", "typography", "components"]
+            "enum": ["tokens-default", "tokens-mode", "typography", "components", "dependencies"]
           },
           "collection": { "type": "string" },
           "mode": { "type": "string" }
@@ -88,6 +88,43 @@
         "typographyStyles": { "type": "integer", "minimum": 0 },
         "components": { "type": "integer", "minimum": 0 },
         "componentSets": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Always present. When the dependency layer was skipped, captured is false, sources is empty, every count is zero, and dependencies.json is absent.",
+      "required": ["captured", "sources", "counts"],
+      "properties": {
+        "captured": { "type": "boolean" },
+        "sources": {
+          "type": "array",
+          "description": "Every Figma file walked for components, sorted by figmaFileName. A file the user asked for but that was not connected belongs in notes.unmapped instead.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["figmaFileName", "figmaFileKey", "componentsWalked"],
+            "properties": {
+              "figmaFileName": { "type": "string", "minLength": 1 },
+              "figmaFileKey": { "type": "string" },
+              "componentsWalked": { "type": "integer", "minimum": 0 }
+            }
+          }
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Totals across dependencies.json. Cross-checked by the validator, so they cannot drift from the data.",
+          "required": ["bindings", "aliases", "nests", "nestsUncaptured", "typographyLinks", "unresolvedBindings"],
+          "properties": {
+            "bindings": { "type": "integer", "minimum": 0 },
+            "aliases": { "type": "integer", "minimum": 0 },
+            "nests": { "type": "integer", "minimum": 0 },
+            "nestsUncaptured": { "type": "integer", "minimum": 0 },
+            "typographyLinks": { "type": "integer", "minimum": 0 },
+            "unresolvedBindings": { "type": "integer", "minimum": 0 }
+          }
+        }
       }
     },
     "notes": {

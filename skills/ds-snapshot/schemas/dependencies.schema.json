@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Design snapshot dependency layer",
+  "description": "Links between things the rest of the snapshot already names: which components bind which tokens and for which properties, which tokens alias which per mode, which components nest which, and which text styles are used. Optional; present only when manifest.dependencies.captured is true. Apart from nestsUncaptured and unresolvedBindings, every id and path here must resolve in tokens.json, typography.json, or components.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "aliases", "components"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "aliases": {
+      "type": "array",
+      "description": "One entry per variable per mode. The same from/to pair repeats across modes, because a token can point at a different primitive in each theme. Sorted by from, then mode.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["from", "to", "mode"],
+        "properties": {
+          "from": { "$ref": "#/$defs/tokenPath" },
+          "to": { "$ref": "#/$defs/tokenPath" },
+          "mode": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The Figma mode name, matching a mode in manifest.collections."
+          }
+        }
+      }
+    },
+    "components": {
+      "type": "array",
+      "description": "One entry per walked component that has at least one link, sorted by id. A component with no dependencies is left out.",
+      "items": { "$ref": "#/$defs/componentDependencies" }
+    }
+  },
+  "$defs": {
+    "tokenPath": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Dot-separated path to a token, as keyed in tokens.json or typography.json. Sanitised per references/figma-mapping.md, so it contains no { or }.",
+      "pattern": "^[^{}]+$"
+    },
+    "componentDependencies": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "All five link arrays are always present, empty when there is nothing. Never omit a key to signal absence.",
+      "required": ["id", "bindings", "typography", "nests", "nestsUncaptured", "unresolvedBindings"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "A component in components.json.",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+        },
+        "bindings": {
+          "type": "array",
+          "description": "Tokens this component binds. A token appears at most once, with its properties merged. Sorted by token.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["token", "properties"],
+            "properties": {
+              "token": { "$ref": "#/$defs/tokenPath" },
+              "properties": {
+                "type": "array",
+                "minItems": 1,
+                "description": "Figma boundVariables keys, e.g. fills, strokes, paddingLeft. Sorted.",
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "typography": {
+          "type": "array",
+          "description": "Paths into typography.json. Sorted.",
+          "items": { "$ref": "#/$defs/tokenPath" }
+        },
+        "nests": {
+          "type": "array",
+          "description": "Components in components.json that this one contains. Sorted by id.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "count"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$"
+              },
+              "count": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "nestsUncaptured": {
+          "type": "array",
+          "description": "Nested components that were not walked, usually living in a Figma file the bridge was not paired with, or private parts. Kept by raw Figma name so the dependency stays visible. Sorted by name.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "count"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "count": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "unresolvedBindings": {
+          "type": "array",
+          "description": "Bindings whose variable maps to no token in this snapshot, kept by raw Figma name. A dangling link is a finding, not a reason to drop it. Sorted by figmaName.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["figmaName", "properties"],
+            "properties": {
+              "figmaName": { "type": "string", "minLength": 1 },
+              "properties": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

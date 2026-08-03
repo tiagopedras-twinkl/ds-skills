@@ -1,12 +1,16 @@
 #!/usr/bin/env node
-// Validates one design snapshot folder against contract v1.0.0.
+// Validates one design snapshot folder against contract v1.1.0.
 // Usage: node validate-snapshot.mjs ds-snapshots/2026-08-03
 // Exits 0 when the snapshot is valid, 1 when it is not. Warnings never fail the run.
+//
+// The dependency layer (dependencies.json) arrived in 1.1.0 and is optional.
+// Checks that only exist in 1.1.0 are gated on the snapshot's own schemaVersion,
+// so a 1.0.0 snapshot stays valid — that is what its schemaVersion is for.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
-const CONTRACT_VERSION = "1.0.0";
+const CONTRACT_VERSION = "1.1.0";
 const DTCG_SCHEMA = "https://www.designtokens.org/schemas/2025.10/format.json";
 const SPEC_TYPES = new Set([
   "color", "dimension", "fontFamily", "fontWeight", "duration", "cubicBezier",
@@ -41,6 +45,7 @@ const sorted = (arr) =>
   arr.every((v, i) => i === 0 || arr[i - 1].toLowerCase() <= v.toLowerCase());
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const label = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function readJson(relPath) {
   const abs = join(root, relPath);
@@ -238,6 +243,13 @@ function validateTokenDoc(relPath, doc, { requireTypography = false, strictAlias
 // ------------------------------------------------------------------- manifest
 
 const manifest = readJson("manifest.json");
+
+// Which contract the snapshot itself claims, so 1.1.0-only checks skip an older one.
+const declaredVersion = (manifest?.schemaVersion ?? "").split(".").map(Number);
+const atLeast = (major, minor) =>
+  declaredVersion[0] > major || (declaredVersion[0] === major && declaredVersion[1] >= minor);
+const HAS_DEPENDENCY_LAYER = atLeast(1, 1);
+
 if (manifest) {
   const M = "manifest.json";
   if (manifest.schemaVersion !== CONTRACT_VERSION) {
@@ -284,6 +296,47 @@ if (manifest) {
   for (const k of ["variables", "typographyStyles", "components", "componentSets"]) {
     if (!Number.isInteger(manifest.counts?.[k])) err(M, `counts.${k} must be an integer`);
   }
+
+  if (HAS_DEPENDENCY_LAYER) {
+    const d = manifest.dependencies;
+    if (!isPlainObject(d)) {
+      err(M, "dependencies must be present as an object, with captured false when the layer was skipped");
+    } else {
+      if (typeof d.captured !== "boolean") err(M, "dependencies.captured must be a boolean");
+      if (!Array.isArray(d.sources)) {
+        err(M, "dependencies.sources must be an array, empty when the layer was skipped");
+      } else {
+        for (const s of d.sources) {
+          const at = `dependencies.sources.${s?.figmaFileName ?? "?"}`;
+          if (!s?.figmaFileName) err(M, `${at}.figmaFileName is required`);
+          if (typeof s?.figmaFileKey !== "string") err(M, `${at}.figmaFileKey must be a string, "" when unknown`);
+          if (!Number.isInteger(s?.componentsWalked) || s.componentsWalked < 0) {
+            err(M, `${at}.componentsWalked must be an integer`);
+          }
+        }
+        const names = d.sources.map((s) => s?.figmaFileName ?? "");
+        if (new Set(names).size !== names.length) err(M, "dependencies.sources must not list a file twice");
+        if (!sorted(names)) err(M, "dependencies.sources must be sorted by figmaFileName");
+        if (d.captured === false && d.sources.length) {
+          err(M, "dependencies.captured is false but sources lists files that were walked");
+        }
+        if (d.captured === true && d.sources.length === 0) {
+          err(M, "dependencies.captured is true but no source file is listed");
+        }
+      }
+      const countKeys = ["bindings", "aliases", "nests", "nestsUncaptured", "typographyLinks", "unresolvedBindings"];
+      if (!isPlainObject(d.counts)) {
+        err(M, `dependencies.counts must be an object with ${countKeys.join(", ")}`);
+      } else {
+        for (const k of countKeys) {
+          if (!Number.isInteger(d.counts[k]) || d.counts[k] < 0) err(M, `dependencies.counts.${k} must be an integer`);
+        }
+        if (d.captured === false && countKeys.some((k) => d.counts[k] !== 0)) {
+          err(M, "dependencies.captured is false so every dependencies.counts value must be 0");
+        }
+      }
+    }
+  }
   if (!Array.isArray(manifest.notes?.nonStandardTypes)) err(M, "notes.nonStandardTypes must be an array");
   if (!Array.isArray(manifest.notes?.unmapped)) err(M, "notes.unmapped must be an array");
   else {
@@ -323,6 +376,20 @@ for (const kind of ["tokens-default", "typography", "components"]) {
     err("manifest.json", `files must contain exactly one ${kind} entry`);
   }
 }
+
+const depsCaptured = manifest?.dependencies?.captured === true;
+if (HAS_DEPENDENCY_LAYER) {
+  const depEntries = declared.filter((f) => f?.kind === "dependencies");
+  if (depsCaptured) {
+    if (depEntries.length !== 1) {
+      err("manifest.json", "dependencies.captured is true so files must contain exactly one dependencies entry");
+    } else if (depEntries[0].path !== "dependencies.json") {
+      err("manifest.json", `the dependencies file must be dependencies.json, got ${depEntries[0].path}`);
+    }
+  } else if (depEntries.length) {
+    err("manifest.json", "dependencies.captured is false so files must not declare a dependencies entry");
+  }
+}
 for (const c of manifest?.collections ?? []) {
   for (const mode of c?.modes ?? []) {
     const hit = declared.find((f) => f?.kind === "tokens-mode" && f.collection === c.name && f.mode === mode);
@@ -335,12 +402,20 @@ for (const c of manifest?.collections ?? []) {
 const defaultTokens = validateTokenDoc("tokens.json", readJson("tokens.json"));
 const typography = validateTokenDoc("typography.json", readJson("typography.json"), { requireTypography: true });
 
+// (tokenPath, modeName) -> alias target, gathered from every per-mode file. This is
+// what dependencies.json's aliases are checked against, in both directions.
+const modeAliases = new Map();
+const modeAliasKey = (path, mode) => `${path} ${mode}`;
+
 for (const f of declared.filter((f) => f?.kind === "tokens-mode")) {
   if (!onDisk.includes(f.path)) continue;
   const doc = readJson(f.path);
   const res = validateTokenDoc(f.path, doc, { strictAliases: false });
   const expected = `tokens/${slug(f.collection)}.${slug(f.mode)}.json`;
   if (f.path !== expected) err(f.path, `filename is off contract, expected ${expected}`);
+  for (const [path, t] of res.tokens ?? []) {
+    if (isAlias(t.value)) modeAliases.set(modeAliasKey(path, f.mode), t.value.slice(1, -1));
+  }
   for (const t of res.usedTypes ?? []) {
     if (EXTRA_TYPES.has(t) && !(manifest?.notes?.nonStandardTypes ?? []).includes(t)) {
       err("manifest.json", `notes.nonStandardTypes must list "${t}", used in ${f.path}`);
@@ -370,8 +445,13 @@ if (components) {
     const ids = [];
     for (const c of components.components) {
       const at = c?.id ?? c?.name ?? "?";
-      for (const k of ["id", "name", "path", "kind", "variants", "variantCombinations", "description", "deprecated", "figma"]) {
+      const required = ["id", "name", "path", "kind", "variants", "variantCombinations", "description", "deprecated", "figma"];
+      if (HAS_DEPENDENCY_LAYER) required.push("source");
+      for (const k of required) {
         if (!(k in (c ?? {}))) err(C, `${at} is missing required field ${k}`);
+      }
+      if (HAS_DEPENDENCY_LAYER && "source" in (c ?? {}) && (typeof c.source !== "string" || !c.source)) {
+        err(C, `${at} source must be the non-empty name of the Figma file it came from`);
       }
       if (!/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)*$/.test(c?.id ?? "")) {
         err(C, `${at} id must be a slug path, got "${c?.id}"`);
@@ -418,6 +498,228 @@ if (components) {
       }
     }
     if (!sorted(ids)) err(C, "components must be sorted by id");
+  }
+}
+
+// ----------------------------------------------------------- dependencies.json
+
+const componentIds = new Set(
+  (Array.isArray(components?.components) ? components.components : []).map((c) => c?.id).filter(Boolean)
+);
+const depCounts = { bindings: 0, aliases: 0, nests: 0, nestsUncaptured: 0, typographyLinks: 0, unresolvedBindings: 0 };
+let dependencies = null;
+
+if (HAS_DEPENDENCY_LAYER && depsCaptured) {
+  dependencies = readJson("dependencies.json");
+} else if (existsSync(join(root, "dependencies.json"))) {
+  err(
+    "dependencies.json",
+    HAS_DEPENDENCY_LAYER
+      ? "exists on disk but manifest.dependencies.captured is false"
+      : `exists but the snapshot declares schemaVersion ${manifest?.schemaVersion}; the dependency layer arrived in 1.1.0`
+  );
+}
+
+if (dependencies) {
+  const D = "dependencies.json";
+  if (!SEMVER.test(dependencies.schemaVersion ?? "")) err(D, "schemaVersion must be semver");
+
+  // Every path must resolve in the documents this layer links together, so
+  // nothing in it can dangle. That is the whole point of the file.
+  const tokenPaths = defaultTokens.tokens ?? new Map();
+  const typographyPaths = typography.tokens ?? new Map();
+
+  if (!Array.isArray(dependencies.aliases)) {
+    err(D, "aliases must be an array, empty when no token aliases another");
+  } else {
+    const seen = new Set();
+    const declaredModes = new Set((manifest?.collections ?? []).flatMap((c) => c?.modes ?? []));
+    for (const a of dependencies.aliases) {
+      const at = `alias ${a?.from} -> ${a?.to} in "${a?.mode}"`;
+      for (const k of ["from", "to", "mode"]) {
+        if (typeof a?.[k] !== "string" || !a[k]) err(D, `${at} needs a non-empty ${k}`);
+      }
+      if (typeof a?.from !== "string" || typeof a?.to !== "string" || typeof a?.mode !== "string") continue;
+      depCounts.aliases++;
+      if (tokenPaths.size && !tokenPaths.has(a.from)) err(D, `${at} from does not exist in tokens.json`);
+      if (tokenPaths.size && !tokenPaths.has(a.to)) err(D, `${at} to does not exist in tokens.json`);
+      if (a.from === a.to) err(D, `${at} points at itself`);
+      if (declaredModes.size && !declaredModes.has(a.mode)) {
+        err(D, `${at} mode is not any collection's mode in the manifest`);
+      }
+      const key = modeAliasKey(a.from, a.mode);
+      if (seen.has(key)) err(D, `${at} is listed twice; aliases hold one entry per token per mode`);
+      seen.add(key);
+
+      // Agree with the reference already written in the per-mode token file.
+      if (modeAliases.has(key)) {
+        if (modeAliases.get(key) !== a.to) {
+          err(D, `${at} disagrees with the per-mode token file, which references {${modeAliases.get(key)}}`);
+        }
+      } else if (modeAliases.size) {
+        err(D, `${at} has no matching alias in any tokens/<collection>.<mode>.json`);
+      }
+    }
+    for (const [key, target] of modeAliases) {
+      if (!seen.has(key)) {
+        const [path, ...rest] = key.split(" ");
+        err(D, `the per-mode token files alias ${path} to {${target}} in "${rest.join(" ")}", which aliases does not record`);
+      }
+    }
+    if (!sorted(dependencies.aliases.map((a) => `${a?.from} ${a?.mode}`))) {
+      err(D, "aliases must be sorted by from, then mode");
+    }
+  }
+
+  if (!Array.isArray(dependencies.components)) {
+    err(D, "components must be an array, empty when nothing has a dependency");
+  } else {
+    const ids = [];
+    const seenIds = new Set();
+    for (const c of dependencies.components) {
+      const at = c?.id ?? "?";
+      for (const k of ["id", "bindings", "typography", "nests", "nestsUncaptured", "unresolvedBindings"]) {
+        if (!(k in (c ?? {}))) err(D, `${at} is missing required field ${k}; every link array is always present, empty when there is nothing`);
+      }
+      if (typeof c?.id !== "string" || !c.id) continue;
+      ids.push(c.id);
+      if (seenIds.has(c.id)) err(D, `duplicate entry for ${c.id}`);
+      seenIds.add(c.id);
+      if (componentIds.size && !componentIds.has(c.id)) {
+        err(D, `${at} is not a component in components.json; this layer only links things the snapshot already names`);
+      }
+
+      if (Array.isArray(c.bindings)) {
+        for (const b of c.bindings) {
+          if (typeof b?.token !== "string" || !b.token) {
+            err(D, `${at} has a binding with no token path`);
+            continue;
+          }
+          depCounts.bindings++;
+          if (tokenPaths.size && !tokenPaths.has(b.token)) {
+            err(D, `${at} binds ${b.token}, which does not exist in tokens.json; an unmappable binding belongs in unresolvedBindings`);
+          }
+          if (!Array.isArray(b.properties) || b.properties.length === 0 || !b.properties.every((p) => typeof p === "string")) {
+            err(D, `${at} binding ${b.token} needs a non-empty array of Figma property names`);
+          } else if (!sorted(b.properties)) {
+            err(D, `${at} binding ${b.token} properties must be sorted`);
+          }
+        }
+        const tokens = c.bindings.map((b) => b?.token ?? "");
+        if (new Set(tokens).size !== tokens.length) {
+          err(D, `${at} binds the same token twice; merge the properties into one entry`);
+        }
+        if (!sorted(tokens)) err(D, `${at} bindings must be sorted by token`);
+      } else {
+        err(D, `${at} bindings must be an array`);
+      }
+
+      if (Array.isArray(c.typography)) {
+        for (const t of c.typography) {
+          if (typeof t !== "string" || !t) {
+            err(D, `${at} has an empty typography path`);
+            continue;
+          }
+          depCounts.typographyLinks++;
+          if (typographyPaths.size && !typographyPaths.has(t)) {
+            err(D, `${at} uses typography ${t}, which does not exist in typography.json`);
+          }
+        }
+        if (new Set(c.typography).size !== c.typography.length) err(D, `${at} lists the same typography token twice`);
+        if (!sorted(c.typography.map(String))) err(D, `${at} typography must be sorted`);
+      } else {
+        err(D, `${at} typography must be an array`);
+      }
+
+      if (Array.isArray(c.nests)) {
+        for (const n of c.nests) {
+          if (typeof n?.id !== "string" || !n.id) {
+            err(D, `${at} has a nests entry with no id`);
+            continue;
+          }
+          depCounts.nests++;
+          if (componentIds.size && !componentIds.has(n.id)) {
+            err(D, `${at} nests ${n.id}, which is not in components.json; a component that was not walked belongs in nestsUncaptured`);
+          }
+          if (n.id === c.id) err(D, `${at} nests itself`);
+          if (!Number.isInteger(n.count) || n.count < 1) err(D, `${at} nests ${n.id} with a count of ${n.count}; must be a positive integer`);
+        }
+        const nested = c.nests.map((n) => n?.id ?? "");
+        if (new Set(nested).size !== nested.length) err(D, `${at} lists the same nested component twice`);
+        if (!sorted(nested)) err(D, `${at} nests must be sorted by id`);
+      } else {
+        err(D, `${at} nests must be an array`);
+      }
+
+      if (Array.isArray(c.nestsUncaptured)) {
+        for (const n of c.nestsUncaptured) {
+          if (typeof n?.name !== "string" || !n.name) {
+            err(D, `${at} has a nestsUncaptured entry with no name`);
+            continue;
+          }
+          depCounts.nestsUncaptured++;
+          if (!Number.isInteger(n.count) || n.count < 1) {
+            err(D, `${at} nestsUncaptured ${n.name} needs a count of at least 1`);
+          }
+        }
+        if (!sorted(c.nestsUncaptured.map((n) => n?.name ?? ""))) err(D, `${at} nestsUncaptured must be sorted by name`);
+      } else {
+        err(D, `${at} nestsUncaptured must be an array`);
+      }
+
+      if (Array.isArray(c.unresolvedBindings)) {
+        for (const u of c.unresolvedBindings) {
+          if (typeof u?.figmaName !== "string" || !u.figmaName) {
+            err(D, `${at} has an unresolvedBindings entry with no figmaName`);
+            continue;
+          }
+          depCounts.unresolvedBindings++;
+          if (!Array.isArray(u.properties) || u.properties.length === 0) {
+            err(D, `${at} unresolved binding ${u.figmaName} needs a non-empty properties array`);
+          }
+        }
+        if (!sorted(c.unresolvedBindings.map((u) => u?.figmaName ?? ""))) {
+          err(D, `${at} unresolvedBindings must be sorted by figmaName`);
+        }
+      } else {
+        err(D, `${at} unresolvedBindings must be an array`);
+      }
+
+      const linkCount =
+        (c.bindings?.length ?? 0) + (c.typography?.length ?? 0) + (c.nests?.length ?? 0) +
+        (c.nestsUncaptured?.length ?? 0) + (c.unresolvedBindings?.length ?? 0);
+      if (linkCount === 0) {
+        err(D, `${at} has no links at all; leave a component with no dependencies out of this file`);
+      }
+    }
+    if (!sorted(ids)) err(D, "components must be sorted by id");
+  }
+
+  // The manifest's totals are derived, so they cannot be allowed to drift.
+  const declaredCounts = manifest?.dependencies?.counts ?? {};
+  for (const [k, got] of Object.entries(depCounts)) {
+    if (Number.isInteger(declaredCounts[k]) && declaredCounts[k] !== got) {
+      err("manifest.json", `dependencies.counts.${k} is ${declaredCounts[k]} but dependencies.json holds ${got}`);
+    }
+  }
+
+  const walked = (manifest?.dependencies?.sources ?? []).reduce((n, s) => n + (s?.componentsWalked ?? 0), 0);
+  if (walked && componentIds.size && walked > componentIds.size) {
+    err(
+      "manifest.json",
+      `dependencies.sources account for ${walked} walked components but components.json holds only ${componentIds.size}`
+    );
+  }
+
+  if (depCounts.unresolvedBindings > 0) {
+    warn(D, `${label(depCounts.unresolvedBindings, "binding")} to a variable this snapshot does not hold`);
+  }
+  if (depCounts.nestsUncaptured > 0) {
+    warn(
+      D,
+      `${label(depCounts.nestsUncaptured, "nested component")} never walked, so the dependencies of those are unknown; ` +
+        `to include them, open the Desktop Bridge on the Figma file they live in and re-run`
+    );
   }
 }
 
@@ -471,7 +773,6 @@ if (manifest?.counts) {
 
 // -------------------------------------------------------------------- report
 
-const label = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 if (warnings.length) {
   console.log(`\n${label(warnings.length, "warning")}:`);
   for (const w of warnings) console.log(`  ~ ${w}`);
@@ -487,6 +788,11 @@ console.log(
     `${manifest?.counts?.variables ?? 0} variables, ` +
     `${manifest?.counts?.typographyStyles ?? 0} typography styles, ` +
     `${manifest?.counts?.components ?? 0} components, ` +
-    `${manifest?.counts?.componentSets ?? 0} component sets.`
+    `${manifest?.counts?.componentSets ?? 0} component sets.` +
+    (dependencies
+      ? `\nDependency layer from ${(manifest?.dependencies?.sources ?? []).length} Figma file(s): ` +
+        `${depCounts.bindings} bindings, ${depCounts.aliases} aliases, ` +
+        `${depCounts.nests} nested links, ${depCounts.typographyLinks} typography links.`
+      : "\nNo dependency layer in this snapshot.")
 );
 process.exit(0);

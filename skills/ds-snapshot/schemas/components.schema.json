@@ -24,6 +24,7 @@
         "name",
         "path",
         "kind",
+        "source",
         "variants",
         "variantCombinations",
         "description",
@@ -49,6 +50,11 @@
         "kind": {
           "type": "string",
           "enum": ["component", "componentSet"]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name of the Figma file this component came from. Added in 1.1.0. The same value for every entry when the library is one file."
         },
         "variants": {
           "type": "object",
