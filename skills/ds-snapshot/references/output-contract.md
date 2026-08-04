@@ -206,6 +206,8 @@ Text styles as `typography` composite tokens, grouped by their slash-separated F
 
 `fontFamily`, `fontSize` and `fontWeight` are always present. `letterSpacing` and `lineHeight` are omitted only in the cases `references/figma-mapping.md` defines, and when omitted the reason is recorded in `$extensions`.
 
+`figmaStyleId` is written as `S:<key>` — the key only, with no trailing comma and no node suffix. Figma reports the same style under two different ids: `S:<key>,` in the file that owns it, and `S:<key>,<localNodeId>` on a text node in a file that uses it. Only `<key>` is common to both, so it is the only part worth storing. Write it as `id.split(",")[0]` whichever id you have. The dependency layer matches a component's text styles against this field, and `references/dependency-capture.md` explains what a raw id costs there.
+
 ## dependencies.json — optional, added in 1.1.0
 
 The links between things the rest of the snapshot already names. It is not a second inventory: apart from `nestsUncaptured` and `unresolvedBindings`, which exist precisely to record what the snapshot does *not* hold, every id and path in this file must resolve in `tokens.json`, `typography.json`, or `components.json`.

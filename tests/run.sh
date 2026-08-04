@@ -164,7 +164,8 @@ reject "more components walked than the inventory holds"
 echo
 echo "4/6 raw captures must build the same dependencies.json by hand or by script"
 # Proves the mapping rules in references/dependency-capture.md and the script agree,
-# and that a bridge envelope, an unwrapped result, and two source files all work.
+# and that a bridge envelope, an unwrapped result, two source files, and text style ids
+# in either raw Figma form all work.
 reset dependencies.json
 node "$BUILD_DEPS" ".tmp/case/$SNAP" .tmp/good/ds-snapshots/captures/*.json >/dev/null
 node -e '
