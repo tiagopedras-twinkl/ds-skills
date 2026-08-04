@@ -47,6 +47,33 @@ It is a set of links between things the snapshot already names, not a second inv
 
 Capture code and the Figma behaviours that shape it are in [`dependency-capture.md`](skills/ds-snapshot/references/dependency-capture.md). `scripts/build-dependencies.mjs` turns the raw captures into `dependencies.json`, reading the Figma-name-to-token-path mapping out of the snapshot's own `$extensions` rather than re-deriving it.
 
+### Sharing it as one file
+
+A snapshot is a folder, because the token files are standalone DTCG documents that off-the-shelf tools can read as-is. For uploading, attaching, or handing to another tool, pack it into one file:
+
+```
+node skills/ds-snapshot/scripts/to-bundle.mjs ds-snapshots/2026-08-03
+```
+
+```json
+{
+  "bundleVersion": "1.0.0",
+  "snapshot": { "folder": "2026-08-03", "schemaVersion": "1.1.0", "exportedAt": "…", "dependenciesCaptured": true },
+  "files": {
+    "components.json":              { "…": "exactly components.json" },
+    "dependencies.json":            { "…": "exactly dependencies.json" },
+    "manifest.json":                { "…": "exactly manifest.json" },
+    "tokens.json":                  { "…": "a standalone DTCG document" },
+    "tokens/semantic.light.json":   { "…": "a standalone DTCG document" },
+    "typography.json":              { "…": "a standalone DTCG document" }
+  }
+}
+```
+
+A container, not a second format: nothing is merged, renamed, or flattened, so each part keeps the format and the schema it already had and a consumer reads `bundle.files["tokens.json"]` exactly as it would read the file. `from-bundle.mjs <bundle.json> <dir>` restores the folder byte for byte, so a bundle someone sent you can be checked with the same validator as a fresh export.
+
+It is written outside the snapshot folder on purpose — the contract lists every file a snapshot may contain, and a bundle is not one of them.
+
 ### Viewing it as a graph
 
 `scripts/to-ds-graph.mjs` converts a snapshot into the `graph.json` that the [ds-graph](https://github.com/tiagopedras-twinkl/ds-graph) viewer and its impact queries read:
@@ -99,7 +126,7 @@ The contract is versioned. Change it deliberately:
 
 Never edit past snapshots to match a new shape. Their `schemaVersion` is what keeps them readable, and `tests/run.sh` checks that a 1.0.0 snapshot still validates against the current validator.
 
-`tests/run.sh` runs five groups: a known-good fixture must validate; a 1.0.0 snapshot and a 1.1.0 one with the dependency layer skipped must too; every class of real breakage must be rejected — seventeen of them, from a colour written as hex to an alias that disagrees with its per-mode token file; the dependency layer built from raw captures by script must byte-match the hand-written fixture; and the ds-graph adapter must produce a graph with nothing dangling. It lives outside `skills/` on purpose, so the installed skill stays lean. CI runs it on every push.
+`tests/run.sh` runs six groups: a known-good fixture must validate; a 1.0.0 snapshot and a 1.1.0 one with the dependency layer skipped must too; every class of real breakage must be rejected — seventeen of them, from a colour written as hex to an alias that disagrees with its per-mode token file; the dependency layer built from raw captures by script must byte-match the hand-written fixture; the ds-graph adapter must produce a graph with nothing dangling; and the single-file bundle must round-trip a snapshot byte for byte. It lives outside `skills/` on purpose, so the installed skill stays lean. CI runs it on every push.
 
 ## Licence
 

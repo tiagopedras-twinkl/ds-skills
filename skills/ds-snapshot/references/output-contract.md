@@ -15,6 +15,8 @@ ds-snapshots/<YYYY-MM-DD>/
 
 `dependencies.json` is the only optional file, and the only one whose absence is legitimate. It is present when and only when `manifest.dependencies.captured` is `true`.
 
+A snapshot is a folder. The single-file bundle produced by `scripts/to-bundle.mjs` is a container for sharing one, holding each of these files verbatim under its path here, and it is written outside the folder — it is never a file inside a snapshot, and adding it to one makes the snapshot invalid.
+
 `<collection>` and `<mode>` are slugs: lowercase, non-alphanumerics collapsed to single hyphens, no leading or trailing hyphen. `Brand Colours` and `Dark Mode` become `tokens/brand-colours.dark-mode.json`.
 
 Every token file, including `tokens.json` and `typography.json`, is a standalone valid DTCG document and carries:

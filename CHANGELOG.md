@@ -3,6 +3,30 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
+## Tooling — 2026-08-04
+
+Not a contract change. The snapshot folder, every file in it, and the validator are untouched, so
+existing snapshots and consumers are unaffected.
+
+- **`scripts/to-bundle.mjs`** packs a validated snapshot into one JSON file for sharing or uploading,
+  and **`scripts/from-bundle.mjs`** unpacks it again. Bundle format version 1.0.0, versioned
+  separately from the contract.
+- The bundle is a container: each file's content sits verbatim under its contract path in
+  `bundle.files`, so nothing is merged, renamed, or flattened, and the token documents remain
+  standalone valid DTCG once read back out.
+- The round trip is byte-exact, and `tests/run.sh` proves it: pack, unpack, `diff -r` against the
+  original, then validate the unpacked copy.
+- A bundle is never a file inside a snapshot folder. `to-bundle.mjs` writes outside it, since the
+  contract lists every file a snapshot may contain.
+- `to-bundle.mjs` refuses a folder that disagrees with its own `manifest.files`; `from-bundle.mjs`
+  refuses a path that would escape the target folder, and refuses to overwrite a non-empty one.
+
+Why a container rather than one merged document: in DTCG every top-level key that is not
+`$`-prefixed is a group of tokens, so putting `components` or `manifest` beside `colour` in one
+document would make DTCG tools read them as tokens. The standard also has no way to express modes,
+which is why the per-mode files exist. Nesting each file whole is what buys the single upload without
+giving up either.
+
 ## Contract 1.1.0 — 2026-08-03
 
 Adds the optional dependency layer: what depends on what, alongside what the library contains.

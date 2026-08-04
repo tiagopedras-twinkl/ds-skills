@@ -65,6 +65,20 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
 9. **Report.** Give the user the headline counts, anything in `manifest.notes.unmapped`, and how the counts moved against the previous snapshot folder if one exists. When the dependency layer ran, add what is worth acting on: bindings that resolved to nothing, components nested but never walked, and which files were walked. If the repo has a parity audit and the user asked for one, run it now; the snapshot itself is complete either way.
 
+## Sharing a snapshot as one file
+
+`scripts/to-bundle.mjs` packs a validated snapshot into a single JSON file, for uploading to a tool, attaching to a message, or handing to another agent:
+
+```bash
+node scripts/to-bundle.mjs ds-snapshots/<YYYY-MM-DD>
+```
+
+It is a container, not a second format. Each file's content sits verbatim under its contract path, so `bundle.files["tokens.json"]` is still a standalone valid DTCG document and `bundle.files["components.json"]` is still exactly `components.json`. Nothing is merged, renamed, or flattened, which is what keeps one upload interchangeable with the folder — and keeps the token files readable by any DTCG tool once pulled back out.
+
+`scripts/from-bundle.mjs <bundle.json> <dir>` restores the folder byte for byte, so a shared bundle can be validated with the same validator as a fresh export. A consumer that only reads the bundle needs nothing but `bundle.files`.
+
+The bundle is written **outside** the snapshot folder. The contract lists every file a snapshot may contain and a bundle is not one of them, so never write one into `ds-snapshots/<date>/`.
+
 ## Feeding the ds-graph viewer
 
 `scripts/to-ds-graph.mjs` converts a validated snapshot into the `graph.json` that the [ds-graph](https://github.com/tiagopedras-twinkl/ds-graph) viewer and its impact queries read:
@@ -91,6 +105,7 @@ If the user wants any of these, treat it as a contract change (below) rather tha
 - `schemas/components.schema.json`, `schemas/dependencies.schema.json`, `schemas/manifest.schema.json` — the published contract for other tools.
 - `scripts/validate-snapshot.mjs` — the gate. Node, no dependencies.
 - `scripts/build-dependencies.mjs` — turns raw captures into `dependencies.json` and fills in the manifest block.
+- `scripts/to-bundle.mjs`, `scripts/from-bundle.mjs` — pack a snapshot into one shareable file and unpack it again.
 - `scripts/to-ds-graph.mjs` — converts a snapshot into a ds-graph `graph.json`.
 
 ## Changing the contract

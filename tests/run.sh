@@ -7,16 +7,19 @@
 #   3. each class of real breakage must be rejected
 #   4. building the dependency layer from raw captures must reproduce the fixture
 #   5. the ds-graph adapter must produce a graph the viewer can read
+#   6. the single-file bundle must round-trip a snapshot byte for byte
 set -euo pipefail
 cd "$(dirname "$0")"
 VALIDATE="$PWD/../skills/ds-snapshot/scripts/validate-snapshot.mjs"
 TO_GRAPH="$PWD/../skills/ds-snapshot/scripts/to-ds-graph.mjs"
+TO_BUNDLE="$PWD/../skills/ds-snapshot/scripts/to-bundle.mjs"
+FROM_BUNDLE="$PWD/../skills/ds-snapshot/scripts/from-bundle.mjs"
 BUILD_DEPS="$PWD/../skills/ds-snapshot/scripts/build-dependencies.mjs"
 MUTATE="$PWD/mutate.mjs"
 SNAP="ds-snapshots/2026-08-03"
 rm -rf .tmp
 
-echo "0/5 SKILL.md frontmatter must be within the platform's limits"
+echo "0/6 SKILL.md frontmatter must be within the platform's limits"
 # Uploading a skill fails outright when description is over 1024 characters, and the
 # error only shows up at upload time. Catch it here instead.
 node -e '
@@ -38,7 +41,7 @@ if (bad) process.exit(1);
 '
 
 echo
-echo "1/5 known-good fixture must pass"
+echo "1/6 known-good fixture must pass"
 node build-fixture.mjs ".tmp/good/$SNAP" >/dev/null
 node "$VALIDATE" ".tmp/good/$SNAP" | tail -2 | sed 's/^/  /'
 
@@ -68,7 +71,7 @@ reject() {
 }
 
 echo
-echo "2/5 older and dependency-free snapshots must still pass"
+echo "2/6 older and dependency-free snapshots must still pass"
 
 # A 1.0.0 snapshot predates the dependency layer. Its schemaVersion is what keeps it
 # readable, so the 1.1.0-only checks must not fire on it.
@@ -84,7 +87,7 @@ edit manifest.json 'd.dependencies={captured:false,sources:[],counts:{bindings:0
 accept "a 1.1.0 snapshot with the dependency layer skipped"
 
 echo
-echo "3/5 each class of breakage must be rejected"
+echo "3/6 each class of breakage must be rejected"
 
 # The original cases: a colour written as hex, plus an extension namespace that is
 # both stray and an unsubstituted placeholder.
@@ -159,7 +162,7 @@ edit manifest.json 'd.dependencies.sources[0].componentsWalked=500'
 reject "more components walked than the inventory holds"
 
 echo
-echo "4/5 raw captures must build the same dependencies.json by hand or by script"
+echo "4/6 raw captures must build the same dependencies.json by hand or by script"
 # Proves the mapping rules in references/dependency-capture.md and the script agree,
 # and that a bridge envelope, an unwrapped result, and two source files all work.
 reset dependencies.json
@@ -177,7 +180,7 @@ console.log("  script output is byte-identical to the hand-written fixture");
 accept "a dependency layer built from raw captures by script"
 
 echo
-echo "5/5 the ds-graph adapter must produce a readable graph"
+echo "5/6 the ds-graph adapter must produce a readable graph"
 node "$TO_GRAPH" ".tmp/good/$SNAP" ".tmp/graph.json" >/dev/null
 node -e '
 const g = require("./.tmp/graph.json");
@@ -202,6 +205,73 @@ if node "$TO_GRAPH" ".tmp/case/$SNAP" ".tmp/nope.json" >/dev/null 2>&1; then
   exit 1
 fi
 echo "  refused a snapshot with no dependency layer"
+
+echo
+echo "6/6 the single-file bundle must round-trip a snapshot byte for byte"
+# The bundle is only worth having if it is interchangeable with the folder, so the
+# test is equality of every file plus a clean validation of the unpacked copy.
+node "$TO_BUNDLE" ".tmp/good/$SNAP" ".tmp/bundle.json" >/dev/null
+node -e '
+const fs = require("fs");
+const b = JSON.parse(fs.readFileSync(".tmp/bundle.json", "utf8"));
+const src = ".tmp/good/ds-snapshots/2026-08-03";
+const listed = ["manifest.json", ...b.files["manifest.json"].files.map(f => f.path)].sort();
+const packed = Object.keys(b.files).sort();
+if (listed.join() !== packed.join()) {
+  console.log("  FAIL: bundle holds " + packed.join(", ") + ", manifest lists " + listed.join(", "));
+  process.exit(1);
+}
+// Each part keeps its own format: the token documents are still valid DTCG on their own.
+for (const p of ["tokens.json", "typography.json"]) {
+  if (!b.files[p].$schema?.includes("designtokens.org")) {
+    console.log("  FAIL: " + p + " lost its $schema inside the bundle");
+    process.exit(1);
+  }
+}
+console.log("  " + packed.length + " files packed, token documents still standalone DTCG");
+'
+node "$FROM_BUNDLE" ".tmp/bundle.json" ".tmp/unpacked" >/dev/null
+diff -r ".tmp/good/$SNAP" ".tmp/unpacked" >/dev/null || {
+  echo "  FAIL: the unpacked snapshot differs from the original"
+  diff -r ".tmp/good/$SNAP" ".tmp/unpacked" || true
+  exit 1
+}
+echo "  unpacked copy is byte-identical to the original folder"
+node "$VALIDATE" ".tmp/unpacked" >/dev/null 2>&1 || {
+  echo "  FAIL: the unpacked snapshot does not validate"
+  node "$VALIDATE" ".tmp/unpacked" || true
+  exit 1
+}
+echo "  unpacked copy validates against the contract"
+
+# A folder that does not match its own manifest must not bundle: a bundle that looks
+# whole but is not is worse than no bundle.
+reset dependencies.json
+if node "$TO_BUNDLE" ".tmp/case/$SNAP" ".tmp/nope.json" >/dev/null 2>&1; then
+  echo "  FAIL: bundled a folder missing a file its manifest lists"
+  exit 1
+fi
+echo "  refused a folder missing a file its manifest lists"
+
+# Unpacking must never write outside the folder the user named, and must never
+# silently overwrite one that already has something in it.
+node -e '
+const fs = require("fs");
+fs.writeFileSync(".tmp/evil.json", JSON.stringify({
+  bundleVersion: "1.0.0",
+  files: { "manifest.json": {}, "../escaped.json": {} },
+}));
+'
+if node "$FROM_BUNDLE" ".tmp/evil.json" ".tmp/evil-out" >/dev/null 2>&1; then
+  echo "  FAIL: unpacked a bundle containing a path outside the target folder"
+  exit 1
+fi
+echo "  refused a bundle with a path outside the target folder"
+if node "$FROM_BUNDLE" ".tmp/bundle.json" ".tmp/good/$SNAP" >/dev/null 2>&1; then
+  echo "  FAIL: unpacked over a folder that already had files in it"
+  exit 1
+fi
+echo "  refused to unpack over a non-empty folder"
 
 rm -rf .tmp
 echo
