@@ -18,6 +18,7 @@ Details that cost real time to find. Do not simplify them away.
 - **Results over roughly 50KB are auto-saved to a file** instead of being returned. Read that file from disk rather than pulling the payload into context.
 - **`boundVariables` values are sometimes an array, sometimes a single object.** `fills`, `strokes`, and `effects` give arrays; everything else gives one object. Normalise with `Array.isArray(v) ? v : [v]`.
 - **`textStyleId` is `figma.mixed`** when one text node uses several styles. `figma.mixed` is a symbol, so a `typeof === "string"` test silently drops those styles. Use `getStyledTextSegments` for that case.
+- **A text style's id is not the same string in every file.** In the file that owns the style, `getLocalTextStylesAsync()` reports `S:<key>,` — trailing comma, nothing after it. In a file that *uses* the style, a text node's `textStyleId` is `S:<key>,<localNodeId>`. Only `<key>` is shared. `build-dependencies.mjs` matches a walked component's `textStyles` against `typography.json`'s `figmaStyleId` with an exact lookup, so raw ids make **every** match fail — and fail quietly: `dependencies.json` comes out with zero typography links and one note per style saying it is absent from `typography.json`, with no error anywhere. This bit the 2026-08-04 snapshot of the Twinkl library, where 49 styles produced 244 typography links only once the ids were normalised. Normalise both sides to `id.split(",")[0]`, which is `S:<key>`. Step 2 below does it on the way out, `typography.json` records `figmaStyleId` in that form (see `references/output-contract.md`), and the builder normalises again on both sides so an older capture holding raw ids still maps.
 - Skip components whose name starts with `.` or `_` — Figma treats those as private. This applies to what gets walked, not to nested instance names: a private part that something nests still shows up as a nested name.
 - Skip a `COMPONENT` whose parent is a `COMPONENT_SET`. Walk the set itself, or every variant is captured separately.
 
@@ -88,7 +89,7 @@ for (let i = FROM; i <= TO && i < figma.root.children.length; i++) {
   for (const top of tops) {
     const bindings = new Map();              // variable label -> Set of property names
     const instances = {};                    // nested component name -> count
-    const styleIds = new Set();
+    const styleIds = new Set();              // raw ids, "S:<key>,<localNodeId>"
 
     for (const n of [top, ...top.findAll(() => true)]) {
       for (const [prop, val] of Object.entries(n.boundVariables || {})) {
@@ -120,7 +121,9 @@ for (let i = FROM; i <= TO && i < figma.root.children.length; i++) {
       }
     }
 
-    for (const id of styleIds) S.styles[id] = true;   // step 4 resolves these
+    // Step 4 resolves these, and getStyleByIdAsync needs the id exactly as the node
+    // reported it — so the cache keeps the raw form and only the output is normalised.
+    for (const id of styleIds) S.styles[id] = true;
 
     out.push({
       figmaName: top.name,
@@ -131,7 +134,10 @@ for (let i = FROM; i <= TO && i < figma.root.children.length; i++) {
       bindings: [...bindings].map(([label, props]) => [label, [...props].sort()])
         .sort((a, b) => (a[0].toLowerCase() < b[0].toLowerCase() ? -1 : 1)),
       instances,
-      textStyles: [...styleIds].sort(),
+      // "S:<key>", dropping the ",<localNodeId>" this file appends — that suffix is
+      // local to this file, so leaving it on makes every match against
+      // typography.json's figmaStyleId fail silently.
+      textStyles: [...new Set([...styleIds].map((id) => id.split(",")[0]))].sort(),
     });
   }
 }
@@ -181,10 +187,14 @@ return { passes, variableCount: Object.keys(S.vars).length, aliases };
 
 ```js
 const S = globalThis.__deps;
+const seen = new Set();
 const out = [];
-for (const id of Object.keys(S.styles)) {
-  const s = await figma.getStyleByIdAsync(id);
+for (const rawId of Object.keys(S.styles)) {
+  const s = await figma.getStyleByIdAsync(rawId);   // needs the raw id, suffix and all
   if (!s || s.type !== "TEXT") continue;
+  const id = rawId.split(",")[0];                   // report it as typography.json keys it
+  if (seen.has(id)) continue;                       // two files' raw ids, one style
+  seen.add(id);
   out.push({ id, name: s.name });
 }
 return out;
@@ -216,7 +226,7 @@ The capture speaks Figma's names. `dependencies.json` speaks the snapshot's ids,
 | `figmaName` of a walked component | the entry's `id` | The same slug rule `components.json` uses |
 | `instances` key | `nests[].id` | Slug of that component's full Figma name, when it is in `components.json` |
 | `instances` key with no inventory entry | `nestsUncaptured[].name` | Kept verbatim — it is a real dependency on something this snapshot does not hold |
-| `textStyles` id | `typography[]`, a typography path | Resolve the id to its name in step 4, then sanitise as `typography.json` is keyed |
+| `textStyles` id | `typography[]`, a typography path | Match `id.split(",")[0]`, which is `S:<key>`, against each typography token's `figmaStyleId` — recorded in the same form. The `,<localNodeId>` a using file appends is dropped on both sides, so a raw capture still maps. A style with no match is named via step 4 for the note |
 | `aliases[]` from step 3 | `aliases[]` | Both ends sanitised to token paths |
 
 The collection dropping is the one place this is easy to get wrong. Two variables in different collections whose names sanitise to the same path already collide inside `tokens.json`; `references/figma-mapping.md` covers that as a name collision, and the same resolution applies here — the binding points at the token that survived, and the loser's binding goes in `unresolvedBindings`.

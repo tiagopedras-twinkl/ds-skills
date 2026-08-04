@@ -3,6 +3,26 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
+## Text style ids — 2026-08-04
+
+Not a contract change, and no `schemaVersion` bump. `figmaStyleId` was already documented and written
+as `S:<key>`; this only says so explicitly and makes the matching tolerant, so every existing snapshot
+stays valid and no consumer has to change.
+
+- **`figmaStyleId` is `S:<key>`** — key only, no trailing comma, no node suffix. Now stated outright in
+  `references/output-contract.md`, because Figma reports one style under two ids: `S:<key>,` in the file
+  that owns it, and `S:<key>,<localNodeId>` on a text node in a file that uses it.
+- **`build-dependencies.mjs` normalises both sides** with `id.split(",")[0]` — the capture's ids, the
+  step 4 names, and `typography.json`'s `figmaStyleId` — so a capture holding raw ids still maps.
+- **Dependency capture step 2 emits normalised ids**, while keeping the raw id in the resolver cache
+  because `getStyleByIdAsync` needs it verbatim. Step 4 reports the normalised id.
+- `tests/build-fixture.mjs` now feeds a raw using-file id and a raw owning-file id through the builder,
+  so the byte-identical check in `tests/run.sh` covers this.
+
+Why it mattered: the lookup was exact, so raw ids made every text style miss — and miss quietly, with
+zero typography links and one "absent from typography.json" note per style, no error. The 2026-08-04
+snapshot of the Twinkl library hit it: 49 styles, 244 typography links only after normalising by hand.
+
 ## Tooling — 2026-08-04
 
 Not a contract change. The snapshot folder, every file in it, and the validator are untouched, so
