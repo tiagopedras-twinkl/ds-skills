@@ -212,14 +212,14 @@ The capture speaks Figma's names. `dependencies.json` speaks the snapshot's ids,
 
 | Captured | Becomes | How |
 |---|---|---|
-| `bindings[][0]`, a `"<collection>/<name>"` label | `bindings[].token`, a token path | Sanitise the `<name>` part per `references/figma-mapping.md` and join its segments with `.`, exactly as `tokens.json` is keyed. **The collection is dropped**, because `tokens.json` merges collections at the top level and does not carry a collection group |
+| `bindings[][0]`, a `"<collection>/<name>"` label | `bindings[].token`, a token path | Sanitise the whole label per `references/figma-mapping.md` and join its segments with `.`, exactly as `tokens.json` is keyed. **The collection is kept**: since contract 2.0.0 it is the first group of every token path, so the label maps across one-for-one |
 | `figmaName` of a walked component | the entry's `id` | The same slug rule `components.json` uses |
 | `instances` key | `nests[].id` | Slug of that component's full Figma name, when it is in `components.json` |
 | `instances` key with no inventory entry | `nestsUncaptured[].name` | Kept verbatim — it is a real dependency on something this snapshot does not hold |
 | `textStyles` id | `typography[]`, a typography path | Resolve the id to its name in step 4, then sanitise as `typography.json` is keyed |
 | `aliases[]` from step 3 | `aliases[]` | Both ends sanitised to token paths |
 
-The collection dropping is the one place this is easy to get wrong. Two variables in different collections whose names sanitise to the same path already collide inside `tokens.json`; `references/figma-mapping.md` covers that as a name collision, and the same resolution applies here — the binding points at the token that survived, and the loser's binding goes in `unresolvedBindings`.
+The label is the one place this is easy to get wrong. It is built as `` `${collection}/${v.name}` ``, and **both halves may themselves contain `/`** — collections called `Primitives/Spacing` are ordinary in real libraries. So never split a label on its first `/` to recover the collection. `build-dependencies.mjs` does not: it indexes every token by `figmaCollection` + `/` + `figmaName` straight out of the snapshot's own `$extensions`, which reproduces the label exactly without ever having to take it apart.
 
 Two rules that matter:
 

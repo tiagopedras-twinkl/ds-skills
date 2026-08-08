@@ -3,7 +3,8 @@
 #   0. SKILL.md frontmatter must be within the platform's upload limits
 #   1. a known-good fixture must validate
 #   2. a 1.0.0 snapshot must still validate, and so must a 1.1.0 one with the
-#      optional dependency layer skipped
+#      optional dependency layer skipped; and two collections holding the same
+#      variable name must both survive, which is what contract 2.0.0 exists for
 #   3. each class of real breakage must be rejected
 #   4. building the dependency layer from raw captures must reproduce the fixture
 #   5. the ds-graph adapter must produce a graph the viewer can read
@@ -69,6 +70,19 @@ reject() {
   fi
   echo "  rejected: $1"
 }
+# Rejecting is not enough when the point of a case is which diagnosis it draws: a
+# self-reference reported as a circular chain sends anyone debugging it the wrong way.
+# The validator exits non-zero on a rejection, so its output goes to a file rather
+# than through a pipe, which pipefail would otherwise read as a failure of the grep.
+says() {
+  node "$VALIDATE" ".tmp/case/$SNAP" >.tmp/said.txt 2>&1 || true
+  if ! grep -q "$1" .tmp/said.txt; then
+    echo "  FAIL: expected the report to say \"$1\""
+    cat .tmp/said.txt
+    exit 1
+  fi
+  echo "  said so in as many words: $2"
+}
 
 echo
 echo "2/6 older and dependency-free snapshots must still pass"
@@ -87,12 +101,77 @@ edit manifest.json 'd.dependencies={captured:false,sources:[],counts:{bindings:0
 accept "a 1.1.0 snapshot with the dependency layer skipped"
 
 echo
+echo "2b/6 two collections holding the same variable name must both survive"
+# The whole reason for contract 2.0.0. Figma only makes a variable name unique within
+# its collection, so a snapshot that cannot hold both is losing real data silently.
+node -e '
+const t = require("./.tmp/good/ds-snapshots/2026-08-03/tokens.json");
+const p = t.Primitives?.space?.md, s = t.Semantic?.space?.md;
+if (!p || !s) { console.log("  FAIL: tokens.json does not hold both collections space/md"); process.exit(1); }
+if (s.$value !== "{Primitives.space.md}") { console.log("  FAIL: the cross-collection alias did not survive"); process.exit(1); }
+if (!t.Primitives?.Spacing?.gutter) { console.log("  FAIL: a collection whose name contains / did not become nested groups"); process.exit(1); }
+const d = require("./.tmp/good/ds-snapshots/2026-08-03/dependencies.json");
+if (!d.aliases.some(a => a.from === "Semantic.space.md" && a.to === "Primitives.space.md")) {
+  console.log("  FAIL: the dependency layer dropped the cross-collection alias"); process.exit(1);
+}
+console.log("  both space/md tokens present, the alias between them recorded, Primitives/Spacing nested");
+'
+
+echo
 echo "3/6 each class of breakage must be rejected"
+
+# Contract 2.0.0: a token path is its collection followed by its name, which is what
+# makes the path a complete identity. Each way of breaking that is its own case.
+reset
+edit tokens.json 'd.space = d.Primitives.space; delete d.Primitives.space'
+reject "a 2.0.0 token whose path does not start with its collection"
+
+reset
+edit tokens.json 'delete d.Primitives.space.md.$extensions["io.github.tiagopedras-twinkl.ds-snapshot"].figmaCollection'
+reject "a 2.0.0 token with no figmaCollection in its extensions"
+
+reset
+edit tokens/primitives.value.json 'd.Primitives.space.sm.$extensions["io.github.tiagopedras-twinkl.ds-snapshot"].figmaCollection="Semantic"'
+reject "a per-mode file holding a token from another collection"
+
+# figmaVariableId is what lets two snapshots of one file be compared through a rename,
+# so it is always present, always Figma's own id, and never shared by two tokens.
+reset
+edit tokens.json 'delete d.Primitives.space.md.$extensions["io.github.tiagopedras-twinkl.ds-snapshot"].figmaVariableId'
+reject "a 2.0.0 token with no figmaVariableId in its extensions"
+
+reset
+edit tokens.json 'd.Semantic.space.md.$extensions["io.github.tiagopedras-twinkl.ds-snapshot"].figmaVariableId="VariableID:1:3"'
+reject "two tokens claiming the same Figma variable id"
+says "has been written twice" "one Figma variable written twice, not two variables"
+
+# The transport may genuinely have no ids to give. That is a gap worth stating, not a
+# reason to fail the export, and the key stays present as an empty string either way.
+reset
+edit tokens.json 'const N="io.github.tiagopedras-twinkl.ds-snapshot"; const w=o=>{for(const v of Object.values(o)){if(v&&typeof v==="object"){if(v.$extensions?.[N])v.$extensions[N].figmaVariableId="";else w(v)}}}; w(d)'
+accept "a snapshot whose transport supplied no variable ids"
+says "cannot be compared to another by variable" "which comparison the empty ids cost"
+
+# A token pointing at its own path. Before 2.0.0 this was also what a cross-collection
+# alias looked like; now it can only be a real cycle, and the message says so.
+reset
+edit tokens.json 'd.Semantic.space.md.$value="{Semantic.space.md}"'
+reject "a token that aliases its own path"
+says "aliases itself" "a self-reference, not a circular chain"
+
+reset
+edit manifest.json 'd.notes.unmapped[0].kind="component"'
+reject "an unmapped reason recorded against the wrong kind"
+
+reset
+edit manifest.json 'd.notes.unmapped[0].reason="made this one up on the day"'
+accept "an unmapped reason outside the contract's table"
+says "not one of the strings fixed in output-contract.md" "warned, so the improvisation is visible and the note is not dropped"
 
 # The original cases: a colour written as hex, plus an extension namespace that is
 # both stray and an unsubstituted placeholder.
 reset
-edit tokens.json 'd.colour.blue["500"].$value="#0066cc"; d.colour.blue["700"].$extensions={"io.github.OWNER.ds-snapshot":{figmaName:"x",figmaType:"COLOR"}}'
+edit tokens.json 'const b=d.Primitives.colour.blue; b["500"].$value="#0066cc"; b["700"].$extensions={"io.github.OWNER.ds-snapshot":{figmaCollection:"Primitives",figmaName:"colour/blue/700",figmaType:"COLOR"}}'
 reject "a broken value and a placeholder namespace"
 
 reset

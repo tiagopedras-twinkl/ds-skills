@@ -1,16 +1,17 @@
 #!/usr/bin/env node
-// Validates one design snapshot folder against contract v1.1.0.
+// Validates one design snapshot folder against contract v2.0.0.
 // Usage: node validate-snapshot.mjs ds-snapshots/2026-08-03
 // Exits 0 when the snapshot is valid, 1 when it is not. Warnings never fail the run.
 //
-// The dependency layer (dependencies.json) arrived in 1.1.0 and is optional.
-// Checks that only exist in 1.1.0 are gated on the snapshot's own schemaVersion,
-// so a 1.0.0 snapshot stays valid — that is what its schemaVersion is for.
+// Version-gated checks. The dependency layer (dependencies.json) arrived in 1.1.0
+// and is optional. Collection-first token paths arrived in 2.0.0. Each check is
+// gated on the snapshot's own schemaVersion, so older snapshots stay valid — that
+// is what their schemaVersion is for, and rewriting them is never the fix.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
-const CONTRACT_VERSION = "1.1.0";
+const CONTRACT_VERSION = "2.0.0";
 const DTCG_SCHEMA = "https://www.designtokens.org/schemas/2025.10/format.json";
 const SPEC_TYPES = new Set([
   "color", "dimension", "fontFamily", "fontWeight", "duration", "cubicBezier",
@@ -22,6 +23,25 @@ const FONT_WEIGHT_WORDS = new Set([
   "book", "medium", "semi-bold", "demi-bold", "bold", "extra-bold", "ultra-bold",
   "black", "heavy", "extra-black", "ultra-black",
 ]);
+// The closed set from output-contract.md, "Reason strings". Two runs of the same
+// situation have to produce the same text or snapshots cannot be compared on their
+// gaps. Unknown reasons warn rather than fail: an unanticipated case must still be
+// recordable, and an error here would only tempt an exporter to drop the note.
+const UNMAPPED_REASONS = new Map([
+  ["name collision after sanitisation", "variable"],
+  ["token path already held by another collection", "variable"],
+  ["alias whose ends are not both in tokens.json", "variable"],
+  ["collection group collides with another collection after sanitisation", "collection"],
+  ["cross-collection alias unresolvable in mode file", "alias"],
+  ["circular alias chain", "alias"],
+  ["unrecognised font style, defaulted to 400", "textStyle"],
+  ["used by a component but absent from typography.json", "textStyle"],
+  ["duplicate component id within source file", "component"],
+  ["duplicate component id across source files", "component"],
+  ["walked for dependencies but absent from components.json", "component"],
+  ["file not connected, components not walked", "file"],
+]);
+const UNMAPPED_KINDS = new Set(["variable", "alias", "textStyle", "component", "collection", "mode", "file"]);
 
 const errors = [];
 const warnings = [];
@@ -125,6 +145,98 @@ function collectTokens(where, node, path, inheritedType, out) {
   }
 }
 
+// The snapshot's own extension payload for a token, whichever namespace it uses.
+// The single-namespace rule is checked separately, so picking the ds-snapshot one
+// here is safe.
+function nsPayload(extensions) {
+  if (!isPlainObject(extensions)) return {};
+  const ns = Object.keys(extensions).find((k) => k.endsWith(".ds-snapshot"));
+  return isPlainObject(extensions[ns]) ? extensions[ns] : {};
+}
+
+// references/figma-mapping.md, "Name sanitisation". Applied to a collection name and
+// to a variable name alike, which is what lets a token path be checked against the
+// collection its own $extensions records.
+function sanitiseSegments(figmaName) {
+  return String(figmaName ?? "")
+    .split("/")
+    .map((s) => s.replace(/[.{}]/g, "-").trim().replace(/\s+/g, " "))
+    .map((s) => (s.startsWith("$") ? `_${s}` : s))
+    .filter(Boolean);
+}
+
+// Contract 2.0.0: a token's path is its collection followed by its name, so a token
+// path is a complete identity and two collections can hold the same variable name.
+// Checking it against $extensions is what makes that structural rather than a promise.
+function checkCollectionPaths(where, tokens, onlyCollection) {
+  const byVariableId = new Map();
+  let missingIds = 0;
+  for (const [path, t] of tokens) {
+    const ext = nsPayload(t.node?.$extensions);
+    if (typeof ext.figmaName !== "string" || !ext.figmaName) {
+      err(where, `${path} has no figmaName in $extensions; every token records the Figma name it came from`);
+    }
+    // Figma's own id for the variable. The only handle on a token that a rename
+    // cannot break, so two snapshots of one file can be compared through one.
+    if (typeof ext.figmaVariableId !== "string") {
+      err(
+        where,
+        `${path} has no figmaVariableId in $extensions, which contract 2.0.0 requires on every token; ` +
+          `it is "" when the transport cannot supply one, never absent`
+      );
+    } else if (!ext.figmaVariableId) {
+      missingIds++;
+    } else {
+      if (!/^VariableID:/.test(ext.figmaVariableId)) {
+        warn(where, `${path} figmaVariableId "${ext.figmaVariableId}" is not Figma's own id form, VariableID:<n>:<n>`);
+      }
+      const twin = byVariableId.get(ext.figmaVariableId);
+      if (twin) {
+        err(
+          where,
+          `${path} and ${twin} both carry figmaVariableId ${ext.figmaVariableId}, so one Figma variable ` +
+            `has been written twice; an id identifies exactly one variable in one file`
+        );
+      } else {
+        byVariableId.set(ext.figmaVariableId, path);
+      }
+    }
+    const collection = ext.figmaCollection;
+    if (typeof collection !== "string" || !collection) {
+      err(where, `${path} has no figmaCollection in $extensions, which contract 2.0.0 requires on every token`);
+      continue;
+    }
+    if (onlyCollection && collection !== onlyCollection) {
+      err(where, `${path} belongs to collection "${collection}", but this file holds "${onlyCollection}" alone`);
+    }
+    const prefix = sanitiseSegments(collection);
+    const actual = path.split(".");
+    if (prefix.join(".") !== actual.slice(0, prefix.length).join(".")) {
+      err(
+        where,
+        `${path} does not start with its collection "${collection}"; contract 2.0.0 keys every token as ` +
+          `<collection>.<name>, which is what keeps two collections' same-named variables apart`
+      );
+    }
+    if (actual.length <= prefix.length) {
+      err(where, `${path} is the collection group itself with no variable name under it`);
+    }
+    const expectedName = sanitiseSegments(ext.figmaName).join(".");
+    if (expectedName && actual.slice(prefix.length).join(".") !== expectedName) {
+      err(where, `${path} does not match its own figmaName "${ext.figmaName}" sanitised to ${expectedName}`);
+    }
+  }
+  // Not an error: the transport may genuinely not supply ids. But it costs this
+  // snapshot the one comparison a rename cannot break, which is worth saying out loud.
+  if (missingIds) {
+    warn(
+      where,
+      `${label(missingIds, "token")} of ${tokens.size} carry an empty figmaVariableId, so this snapshot ` +
+        `cannot be compared to another by variable — only by path, which a rename in Figma breaks`
+    );
+  }
+}
+
 function checkSubValue(where, tokenPath, field, type, v) {
   if (isAlias(v)) return; // resolved separately
   const at = `${tokenPath}${field ? "." + field : ""}`;
@@ -188,7 +300,11 @@ function checkSubValue(where, tokenPath, field, type, v) {
   }
 }
 
-function validateTokenDoc(relPath, doc, { requireTypography = false, strictAliases = true } = {}) {
+function validateTokenDoc(
+  relPath,
+  doc,
+  { requireTypography = false, strictAliases = true, collectionPaths = false, onlyCollection = null } = {}
+) {
   if (!doc) return new Map();
   if (doc.$schema !== DTCG_SCHEMA) {
     err(relPath, `$schema must be "${DTCG_SCHEMA}"`);
@@ -215,6 +331,8 @@ function validateTokenDoc(relPath, doc, { requireTypography = false, strictAlias
     }
   }
 
+  if (collectionPaths) checkCollectionPaths(relPath, tokens, onlyCollection);
+
   // aliases resolve, and no cycles
   for (const [path, t] of tokens) {
     if (!isAlias(t.value)) continue;
@@ -222,6 +340,21 @@ function validateTokenDoc(relPath, doc, { requireTypography = false, strictAlias
     let cursor = t.value;
     while (isAlias(cursor)) {
       const target = cursor.slice(1, -1);
+      // A one-token cycle and a cross-collection name shadow are the same shape on
+      // the page, and reporting one as the other sends anyone debugging it the wrong
+      // way. Which it is depends entirely on whether paths carry their collection.
+      if (target === seen[seen.length - 1]) {
+        err(
+          relPath,
+          collectionPaths
+            ? `${target} aliases itself. Paths carry their collection in contract 2.0.0, so this is a real ` +
+                `cycle in Figma and not a same-named variable in another collection`
+            : `${target} aliases itself. In contract 1.x this is also what a cross-collection alias looks ` +
+                `like, because paths carry no collection — check the target's collection in Figma before ` +
+                `treating it as a cycle. Contract 2.0.0 removes the ambiguity`
+        );
+        break;
+      }
       if (seen.includes(target)) {
         err(relPath, `circular alias chain: ${[...seen, target].join(" -> ")}`);
         break;
@@ -249,6 +382,7 @@ const declaredVersion = (manifest?.schemaVersion ?? "").split(".").map(Number);
 const atLeast = (major, minor) =>
   declaredVersion[0] > major || (declaredVersion[0] === major && declaredVersion[1] >= minor);
 const HAS_DEPENDENCY_LAYER = atLeast(1, 1);
+const HAS_COLLECTION_PATHS = atLeast(2, 0);
 
 if (manifest) {
   const M = "manifest.json";
@@ -340,8 +474,31 @@ if (manifest) {
   if (!Array.isArray(manifest.notes?.nonStandardTypes)) err(M, "notes.nonStandardTypes must be an array");
   if (!Array.isArray(manifest.notes?.unmapped)) err(M, "notes.unmapped must be an array");
   else {
+    // One systemic cause produces one note per item, so an off-contract reason would
+    // otherwise fill the report with the same sentence dozens of times. Count them
+    // and say it once.
+    const improvised = new Map();
     for (const u of manifest.notes.unmapped) {
-      if (!u?.kind || !u?.name || !u?.reason) err(M, "each notes.unmapped entry needs kind, name and reason");
+      if (!u?.kind || !u?.name || !u?.reason) {
+        err(M, "each notes.unmapped entry needs kind, name and reason");
+        continue;
+      }
+      if (!UNMAPPED_KINDS.has(u.kind)) {
+        err(M, `notes.unmapped kind "${u.kind}" is not one the contract defines`);
+      }
+      const expectedKind = UNMAPPED_REASONS.get(u.reason);
+      if (!expectedKind) {
+        improvised.set(u.reason, (improvised.get(u.reason) ?? 0) + 1);
+      } else if (expectedKind !== u.kind) {
+        err(M, `notes.unmapped reason "${u.reason}" belongs to kind "${expectedKind}", not "${u.kind}"`);
+      }
+    }
+    for (const [reason, n] of improvised) {
+      warn(
+        M,
+        `notes.unmapped reason "${reason}" (${label(n, "note")}) is not one of the strings fixed in ` +
+          `output-contract.md, "Reason strings"; two runs of the same situation must produce identical text`
+      );
     }
   }
 }
@@ -399,7 +556,11 @@ for (const c of manifest?.collections ?? []) {
 
 // ---------------------------------------------------------------- token files
 
-const defaultTokens = validateTokenDoc("tokens.json", readJson("tokens.json"));
+const defaultTokens = validateTokenDoc("tokens.json", readJson("tokens.json"), {
+  collectionPaths: HAS_COLLECTION_PATHS,
+});
+// Text styles are not variables and belong to no collection, so typography paths
+// never gain a collection group and are unchanged by 2.0.0.
 const typography = validateTokenDoc("typography.json", readJson("typography.json"), { requireTypography: true });
 
 // (tokenPath, modeName) -> alias target, gathered from every per-mode file. This is
@@ -410,7 +571,11 @@ const modeAliasKey = (path, mode) => `${path} ${mode}`;
 for (const f of declared.filter((f) => f?.kind === "tokens-mode")) {
   if (!onDisk.includes(f.path)) continue;
   const doc = readJson(f.path);
-  const res = validateTokenDoc(f.path, doc, { strictAliases: false });
+  const res = validateTokenDoc(f.path, doc, {
+    strictAliases: false,
+    collectionPaths: HAS_COLLECTION_PATHS,
+    onlyCollection: HAS_COLLECTION_PATHS ? f.collection : null,
+  });
   const expected = `tokens/${slug(f.collection)}.${slug(f.mode)}.json`;
   if (f.path !== expected) err(f.path, `filename is off contract, expected ${expected}`);
   for (const [path, t] of res.tokens ?? []) {
@@ -783,8 +948,12 @@ if (errors.length) {
   console.log(`\nSnapshot is off contract. Fix the export, do not adjust the contract to fit.`);
   process.exit(1);
 }
+// Say which contract it was judged against, not which one this validator implements:
+// an older snapshot is judged against the version it declares, and reporting the
+// newer number would read as though it had been held to rules it predates.
+const judgedAgainst = manifest?.schemaVersion ?? CONTRACT_VERSION;
 console.log(
-  `\nSnapshot valid against contract ${CONTRACT_VERSION}: ` +
+  `\nSnapshot valid against contract ${judgedAgainst}: ` +
     `${manifest?.counts?.variables ?? 0} variables, ` +
     `${manifest?.counts?.typographyStyles ?? 0} typography styles, ` +
     `${manifest?.counts?.components ?? 0} components, ` +

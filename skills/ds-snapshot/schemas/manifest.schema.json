@@ -138,6 +138,7 @@
         },
         "unmapped": {
           "type": "array",
+          "description": "Anything Figma returned that the contract cannot hold, one entry per item. An empty array is a clean snapshot; a populated one is a signal, not a failure.",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -145,10 +146,14 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "enum": ["variable", "textStyle", "component", "collection", "mode"]
+                "enum": ["variable", "alias", "textStyle", "component", "collection", "mode", "file"]
               },
               "name": { "type": "string", "minLength": 1 },
-              "reason": { "type": "string", "minLength": 1 }
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "description": "One of the strings fixed in output-contract.md, 'Reason strings'. Deliberately not an enum here: an unanticipated situation must still be recordable, and the validator warns rather than fails so that the improvisation is visible instead of the note being dropped."
+              }
             }
           }
         }

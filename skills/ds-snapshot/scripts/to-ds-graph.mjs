@@ -69,12 +69,21 @@ const addNode = (id, data) => {
 const aliasSources = new Set(deps.aliases.map((a) => a.from));
 const aliasTargets = new Set(deps.aliases.map((a) => a.to));
 
+// The collection is recorded on the token, not inferred from its path. Since contract
+// 2.0.0 the path does start with the collection, but a collection name can be several
+// segments long ("Primitives/Spacing"), so the first segment is not the whole of it.
+const collectionOf = (node, path) => {
+  const ext = node?.$extensions ?? {};
+  const ns = Object.keys(ext).find((k) => k.endsWith(".ds-snapshot"));
+  return ext[ns]?.figmaCollection ?? path.split(".")[0];
+};
+
 for (const [path, t] of tokenDocs) {
   const isPrimitive = aliasTargets.has(path) && !aliasSources.has(path);
   addNode(path, {
     kind: isPrimitive ? "primitive" : "token",
     name: path.split(".").pop(),
-    collection: path.split(".")[0],
+    collection: collectionOf(t.node, path),
     valueType: t.type ?? "",
     value: t.value,
   });
