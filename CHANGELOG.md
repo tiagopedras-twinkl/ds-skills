@@ -3,6 +3,66 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
+## Contract 2.0.0 — 2026-08-08
+
+**Breaking.** A token's path now begins with its Figma collection: `Typography.Size.2xl` becomes
+`Primitives.Typography.Size.2xl`. Anything that joins on a token path has to be updated. Component
+ids, typography paths and everything in `components.json` are unchanged.
+
+Why it had to change. DTCG identifies a token by its path alone and has no concept of collections.
+Figma only requires a variable name to be unique *within* its collection, so two collections may each
+hold `Typography/Size/2xl` and that is ordinary. Against contract 1.x that cost real data, and a real
+export proved it: of 523 variables in the *1. Foundations* library, 15 shared a name across the
+`Primitives` and `Tokens` collections, 14 of them appeared in **no** file of the snapshot at all, and
+the export still validated because the losses were absorbed as recorded gaps. Worse, the `Tokens`
+copies aliased the `Primitives` copies — and with no collection in the path, that reference came out
+pointing at itself, which is invalid DTCG and which the validator reported as a circular alias chain.
+So the per-collection mode files, which exist precisely to keep collections apart, could not hold
+those tokens either.
+
+Putting the collection at the front removes both problems by construction rather than by rule, and
+takes a third with them: two collections that type the same name differently (`FONT_SIZE` yielding
+`dimension`, `ALL_SCOPES` yielding `number`) are now separate tokens that each keep their own `$type`.
+
+- **Token paths carry their collection**, in `tokens.json` and in every `tokens/<collection>.<mode>.json`,
+  so one variable has one path everywhere and a cross-collection reference reads the same in every file.
+  A collection whose own name contains `/` opens a group per segment.
+- **`$extensions … .figmaCollection`**, new and required on every token, holding the unsanitised
+  collection name beside `figmaName`.
+- **`$extensions … .figmaVariableId`**, new and required on every token, holding Figma's own id for
+  the variable verbatim. It is the only field that identifies a variable independently of what it is
+  called or where it sits, which is what makes two snapshots of the same file comparable through a
+  rename: between 2026-08-04 and 2026-08-07, 339 of 456 variables changed nothing but their path, and
+  on paths alone that reads as 339 deletions and 339 additions. `""` when the transport cannot supply
+  one, never absent — and the validator says plainly what an empty one costs. Ids must be unique
+  within a document; two tokens sharing one means a variable was written twice, and is an error.
+  Ids mean nothing across Figma files, so only compare snapshots of the same file.
+- **A written merge policy for `tokens.json`.** Collections merge in case-insensitive name order.
+  Same-named variables from different collections can no longer collide; the two residual collisions —
+  two collection names that sanitise alike, and a collection group landing on an existing token — are
+  defined, and the loser is recorded rather than dropped silently.
+- **A closed set of `notes.unmapped` reason strings**, with the `name` format fixed for each, so the
+  same situation produces the same text on every run. The validator warns on anything outside it —
+  a warning rather than an error, so an unanticipated case is still recorded instead of being dropped.
+  `kind` gains `alias` and `file`, both of which were already in use and neither of which the published
+  schema allowed.
+- **The validator tells a real cycle from a name shadow.** A token referencing its own path now gets
+  its own diagnosis, and says which of the two it can be given the snapshot's contract version.
+- **`build-dependencies.mjs` no longer splits a capture label on its first `/`.** A label is
+  `<collection>/<name>` and both halves may contain `/`, so collections like `Primitives/Spacing` were
+  being mis-mapped. It now matches labels rebuilt from the snapshot's own extensions, and a
+  cross-collection alias is recorded instead of being silently discarded as a self-reference.
+
+Migrating: branch on `manifest.schemaVersion`. To match a 1.x path against a 2.x one, strip the
+leading collection group, or compare on `$extensions`, which carries `figmaName` and `figmaCollection`
+separately in both. Past snapshots are not rewritten — their `schemaVersion` is what keeps them
+readable, and `tests/run.sh` checks a 1.0.0 snapshot still validates.
+
+Out of scope, and deliberately so: the library that produced the failing export also uses identical
+names for different variables in two collections, which is confusing in Figma regardless of tooling.
+That is for the design system team. A snapshot tool cannot assume its input is well formed, so the
+skill behaves correctly either way.
+
 ## Text style ids — 2026-08-04
 
 Not a contract change, and no `schemaVersion` bump. `figmaStyleId` was already documented and written
