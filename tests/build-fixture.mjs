@@ -356,7 +356,9 @@ c("walk-product.json", {
         ["Primitives/Spacing/gutter", ["paddingTop"]],
       ],
       instances: { "Actions/Button": 2 },
-      textStyles: ["S:h1"],
+      // Raw, as a using file reports it: "S:<key>,<localNodeId>". It must still map to
+      // heading.level-1, whose figmaStyleId is the bare key.
+      textStyles: ["S:h1,1204:10"],
     },
   ],
 });
@@ -375,9 +377,11 @@ c("aliases.json", {
   },
 });
 
+// Step 4. The second id is the raw owning-file form, "S:<key>," — the builder cuts both
+// these and the walk's ids back to the key before comparing anything.
 c("styles.json", [
   { id: "S:body", name: "Body/Base" },
-  { id: "S:h1", name: "Heading/Level 1" },
+  { id: "S:h1,", name: "Heading/Level 1" },
 ]);
 
 console.log("fixture written to", root);

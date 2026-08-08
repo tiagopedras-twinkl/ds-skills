@@ -85,11 +85,18 @@ if (!tokenByLabel.size) {
   );
 }
 
-// Figma style id -> typography path.
+// A text style's id differs by which file reports it: the owning file gives "S:<key>,"
+// and a using file gives "S:<key>,<localNodeId>". Only <key> is shared, so both sides of
+// every comparison are cut back to "S:<key>". Done here as well as in the capture so a
+// capture holding raw ids still maps — without it every lookup misses and the layer comes
+// out with no typography links and no error.
+const styleKey = (id) => String(id).split(",")[0];
+
+// Figma style key -> typography path.
 const typographyByStyleId = new Map();
 for (const [path, ext] of walk(typography)) {
   const id = nsPayload(ext).figmaStyleId;
-  if (id) typographyByStyleId.set(id, path);
+  if (id) typographyByStyleId.set(styleKey(id), path);
 }
 
 // Full Figma component name -> inventory id.
@@ -122,7 +129,7 @@ function unwrap(doc, depth = 0) {
 
 const walked = [];          // { fileName, components: [...] }
 const capturedAliases = []; // { from, to, mode }
-const styleNames = new Map(); // style id -> Figma style name
+const styleNames = new Map(); // style key -> Figma style name
 
 for (const file of captureFiles) {
   if (!existsSync(file)) fail(`capture file not found: ${file}`);
@@ -132,7 +139,7 @@ for (const file of captureFiles) {
   if (Array.isArray(payload)) {
     // Step 4: resolved text style ids.
     if (payload.every((s) => s && typeof s.id === "string" && typeof s.name === "string")) {
-      for (const s of payload) styleNames.set(s.id, s.name);
+      for (const s of payload) styleNames.set(styleKey(s.id), s.name);
       continue;
     }
     // A bare step 2 array, without its wrapper.
@@ -184,7 +191,8 @@ for (const source of walked) {
     }
 
     const typographyPaths = new Set();
-    for (const styleId of c.textStyles ?? []) {
+    for (const rawStyleId of c.textStyles ?? []) {
+      const styleId = styleKey(rawStyleId);
       const path = typographyByStyleId.get(styleId);
       if (path) typographyPaths.add(path);
       else {
