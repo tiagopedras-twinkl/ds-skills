@@ -10,11 +10,15 @@
 // unwrapped automatically.
 //
 // The mapping from Figma names to snapshot ids is not guessed. Every token in
-// tokens.json records its original figmaName in $extensions, every typography token
-// records its figmaStyleId, and components.json records each component's name and
-// path — so the snapshot describes its own mapping. That is what the extension
-// namespace is for, and it is why this conversion is reproducible rather than a
-// re-derivation of the sanitising rules.
+// tokens.json records its original figmaName and figmaCollection in $extensions,
+// every typography token records its figmaStyleId, and components.json records each
+// component's name and path — so the snapshot describes its own mapping. That is what
+// the extension namespace is for, and it is why this conversion is reproducible rather
+// than a re-derivation of the sanitising rules.
+//
+// A capture labels a variable "<collection>/<name>", and both halves may contain "/"
+// of their own — collections called "Primitives/Spacing" are ordinary. So the label is
+// never split. It is rebuilt from the two extension fields and matched whole.
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
@@ -58,17 +62,27 @@ const nsPayload = (extensions) => {
   return ns ? extensions[ns] ?? {} : {};
 };
 
-// Figma variable name (without its collection) -> token path.
-const tokenByFigmaName = new Map();
-const ambiguousTokens = new Set();
+// Capture label "<collection>/<name>" -> token path. Rebuilt from the snapshot's own
+// extensions, so it is the same string the capture produced, character for character.
+const tokenByLabel = new Map();
+let sawFigmaName = false;
 for (const [path, ext] of walk(tokens)) {
-  const figmaName = nsPayload(ext).figmaName;
+  const { figmaName, figmaCollection } = nsPayload(ext);
   if (!figmaName) continue;
-  if (tokenByFigmaName.has(figmaName)) ambiguousTokens.add(figmaName);
-  else tokenByFigmaName.set(figmaName, path);
+  sawFigmaName = true;
+  if (!figmaCollection) continue;
+  tokenByLabel.set(`${figmaCollection}/${figmaName}`, path);
 }
-if (!tokenByFigmaName.size) {
+if (!sawFigmaName) {
   fail("no token in tokens.json carries a figmaName extension, so the capture cannot be mapped onto it");
+}
+if (!tokenByLabel.size) {
+  fail(
+    "no token in tokens.json carries a figmaCollection extension.\n" +
+      "That arrived with contract 2.0.0, and without it a capture label cannot be matched onto a token:\n" +
+      "both a collection name and a variable name may contain '/', so the label cannot be split apart.\n" +
+      "Re-run the inventory steps of ds-snapshot to produce a 2.0.0 snapshot, then build the layer against that."
+  );
 }
 
 // A text style's id differs by which file reports it: the owning file gives "S:<key>,"
@@ -157,10 +171,6 @@ const byLower = (pick) => (a, b) => {
   const y = String(pick(b)).toLowerCase();
   return x < y ? -1 : x > y ? 1 : 0;
 };
-// Drop the collection from a "<collection>/<name>" capture label: tokens.json merges
-// collections at the top level and carries no collection group.
-const withoutCollection = (label) => label.split("/").slice(1).join("/");
-
 let skippedNoLinks = 0;
 for (const source of walked) {
   for (const c of source.components) {
@@ -173,19 +183,11 @@ for (const source of walked) {
     const bindings = new Map();          // token path -> Set of properties
     const unresolvedBindings = new Map(); // figma name -> Set of properties
     for (const [rawLabel, props] of c.bindings ?? []) {
-      const figmaName = withoutCollection(rawLabel);
-      const path = tokenByFigmaName.get(figmaName);
+      const path = tokenByLabel.get(rawLabel);
       const target = path ? bindings : unresolvedBindings;
       const key = path ?? rawLabel;
       if (!target.has(key)) target.set(key, new Set());
       for (const p of props) target.get(key).add(p);
-      if (path && ambiguousTokens.has(figmaName)) {
-        notes.push({
-          kind: "variable",
-          name: rawLabel,
-          reason: `binding mapped to ${path}, which more than one Figma variable shares`,
-        });
-      }
     }
 
     const typographyPaths = new Set();
@@ -239,8 +241,8 @@ for (const source of walked) {
 const aliases = [];
 const seenAliases = new Set();
 for (const a of capturedAliases) {
-  const from = tokenByFigmaName.get(withoutCollection(a.from));
-  const to = tokenByFigmaName.get(withoutCollection(a.to));
+  const from = tokenByLabel.get(a.from);
+  const to = tokenByLabel.get(a.to);
   if (!from || !to) {
     notes.push({
       kind: "variable",
@@ -249,7 +251,13 @@ for (const a of capturedAliases) {
     });
     continue;
   }
-  if (from === to) continue; // two Figma variables that share one token path
+  // Since 2.0.0 a path carries its collection, so two ends can only be equal when a
+  // variable really does point at itself. Before that they collapsed here silently,
+  // which is how a cross-collection alias went missing without leaving a trace.
+  if (from === to) {
+    notes.push({ kind: "alias", name: `${from} -> ${to}`, reason: "circular alias chain" });
+    continue;
+  }
   const key = `${from} ${a.mode}`;
   if (seenAliases.has(key)) continue;
   seenAliases.add(key);
@@ -258,7 +266,7 @@ for (const a of capturedAliases) {
 aliases.sort(byLower((a) => `${a.from} ${a.mode}`));
 
 const dependencies = {
-  schemaVersion: manifest?.schemaVersion ?? "1.1.0",
+  schemaVersion: manifest?.schemaVersion ?? "2.0.0",
   aliases,
   components: [...out.values()].sort(byLower((c) => c.id)),
 };

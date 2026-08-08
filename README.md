@@ -26,6 +26,10 @@ ds-snapshots/<YYYY-MM-DD>/
 └── dependencies.json  what depends on what                        (optional)
 ```
 
+A token is keyed by its collection followed by its name — `Primitives.Typography.Size.2xl`. Figma only makes a variable name unique *within* a collection, so the collection is half the identity; leaving it out means two collections cannot both be represented and an alias between them is indistinguishable from a token pointing at itself. Contract 2.0.0 changed this and is a breaking change for anything joining on a token path. See [`output-contract.md`](skills/ds-snapshot/references/output-contract.md), "Reading a snapshot written before 2.0.0".
+
+Every token also records `figmaVariableId`, Figma's own id for the variable. A path changes whenever someone renames a variable or moves it into another group; the id does not. For comparing two snapshots **of the same Figma file**, that is the key to join on — see "figmaVariableId, and what it is good for" for what it cannot tell you.
+
 The full contract is in [`output-contract.md`](skills/ds-snapshot/references/output-contract.md). Figma-to-DTCG conversion rules are in [`figma-mapping.md`](skills/ds-snapshot/references/figma-mapping.md).
 
 ### The dependency layer
@@ -58,7 +62,7 @@ node skills/ds-snapshot/scripts/to-bundle.mjs ds-snapshots/2026-08-03
 ```json
 {
   "bundleVersion": "1.0.0",
-  "snapshot": { "folder": "2026-08-03", "schemaVersion": "1.1.0", "exportedAt": "…", "dependenciesCaptured": true },
+  "snapshot": { "folder": "2026-08-03", "schemaVersion": "2.0.0", "exportedAt": "…", "dependenciesCaptured": true },
   "files": {
     "components.json":              { "…": "exactly components.json" },
     "dependencies.json":            { "…": "exactly dependencies.json" },
@@ -126,7 +130,7 @@ The contract is versioned. Change it deliberately:
 
 Never edit past snapshots to match a new shape. Their `schemaVersion` is what keeps them readable, and `tests/run.sh` checks that a 1.0.0 snapshot still validates against the current validator.
 
-`tests/run.sh` runs six groups: a known-good fixture must validate; a 1.0.0 snapshot and a 1.1.0 one with the dependency layer skipped must too; every class of real breakage must be rejected — seventeen of them, from a colour written as hex to an alias that disagrees with its per-mode token file; the dependency layer built from raw captures by script must byte-match the hand-written fixture; the ds-graph adapter must produce a graph with nothing dangling; and the single-file bundle must round-trip a snapshot byte for byte. It lives outside `skills/` on purpose, so the installed skill stays lean. CI runs it on every push.
+`tests/run.sh` runs six groups: a known-good fixture must validate; a 1.0.0 snapshot and a 1.1.0 one with the dependency layer skipped must too, and two collections holding the same variable name must both survive; every class of real breakage must be rejected — twenty-four of them, from a colour written as hex to two tokens claiming the same Figma variable id; the dependency layer built from raw captures by script must byte-match the hand-written fixture; the ds-graph adapter must produce a graph with nothing dangling; and the single-file bundle must round-trip a snapshot byte for byte. Four cases also assert *which* diagnosis the validator gives, because a self-reference reported as a circular alias chain sends anyone debugging it the wrong way. It lives outside `skills/` on purpose, so the installed skill stays lean. CI runs it on every push.
 
 ## Licence
 

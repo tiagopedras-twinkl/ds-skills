@@ -1,4 +1,4 @@
-# Output contract v1.1.0
+# Output contract v2.0.0
 
 Every snapshot has exactly this layout. No extra files, no missing files.
 
@@ -25,6 +25,17 @@ Every token file, including `tokens.json` and `typography.json`, is a standalone
 "$schema": "https://www.designtokens.org/schemas/2025.10/format.json"
 ```
 
+## Reading a snapshot written before 2.0.0
+
+2.0.0 changes what a token path looks like, so it is a breaking change for anything that joins on one. A consumer must branch on `manifest.schemaVersion`:
+
+- **`1.x`** — a token path is the variable name alone, collections are not in it, and a variable whose name is also used in another collection may be missing entirely.
+- **`2.x`** — a token path starts with the collection, and every variable is present.
+
+To match a 1.x path against a 2.x one, strip the leading collection group from the 2.x path, or compare on the `$extensions` payload, which carries `figmaName` and `figmaCollection` separately and is stable across both versions. Component ids, typography paths and everything in `components.json` are unchanged by 2.0.0.
+
+Never rewrite a past snapshot into the new shape. Its `schemaVersion` is what keeps it readable.
+
 ## Ordering and formatting
 
 These rules exist so that `git diff` between two snapshot folders shows design changes and nothing else.
@@ -40,8 +51,8 @@ These rules exist so that `git diff` between two snapshot folders shows design c
 
 ```json
 {
-  "schemaVersion": "1.1.0",
-  "generator": { "skill": "ds-snapshot", "skillVersion": "1.1.0" },
+  "schemaVersion": "2.0.0",
+  "generator": { "skill": "ds-snapshot", "skillVersion": "2.0.0" },
   "exportedAt": "2026-08-03T09:14:22Z",
   "spec": { "designTokens": "2025.10" },
   "source": {
@@ -102,16 +113,39 @@ Field rules:
 - `files` lists every file in the snapshot except `manifest.json` itself, and nothing else. The validator compares it against the directory in both directions.
 - `counts.variables` counts variable definitions once, not once per mode, so it equals the leaf token count in `tokens.json`.
 - `notes.nonStandardTypes` lists `$type` values used that the DTCG spec does not define, currently only `boolean` and `string`. Empty array when none.
-- `notes.unmapped` records anything Figma returned that this contract cannot hold, one entry per item: `{ "kind": "variable", "name": "...", "reason": "..." }`. An empty array is a clean snapshot; a populated one is a signal, not a failure.
+- `notes.unmapped` records anything Figma returned that this contract cannot hold, one entry per item: `{ "kind": "variable", "name": "...", "reason": "..." }`. An empty array is a clean snapshot; a populated one is a signal, not a failure. `reason` is never improvised — the permitted strings and the `name` format each one takes are fixed in "Reason strings" below.
 - `dependencies` is always present. When the layer was skipped it is `{ "captured": false, "sources": [], "counts": { … all zero } }` and `dependencies.json` is absent. Never omit the block to signal that the layer did not run.
 - `dependencies.sources` lists every Figma file walked for components, sorted by `figmaFileName`, and `componentsWalked` is how many top-level components each contributed. A file the user asked for but that was not connected does not appear here — it belongs in `notes.unmapped` with reason `file not connected, components not walked`, so the gap is on the record.
 - `dependencies.counts` are totals across `dependencies.json` and are cross-checked by the validator, so they cannot drift from the data.
+
+## Reason strings
+
+`notes.unmapped[].reason` is a closed set. The same situation must produce the same text on every run, or two snapshots of the same library cannot be compared on their gaps. Each row also fixes the `name` format, because a free-form name is just as much a source of drift as a free-form reason.
+
+| `kind` | `reason` | `name` is | Written when |
+| --- | --- | --- | --- |
+| `variable` | `name collision after sanitisation` | `<figma name> (<collection>)` | Two variables in one collection sanitise to the same path. The first by Figma's order is kept. |
+| `variable` | `token path already held by another collection` | `<figma name> (<collection>)` | A collection group collision left this variable nowhere to go. See "Merging into tokens.json". |
+| `variable` | `alias whose ends are not both in tokens.json` | `<from label> -> <to label>` | The dependency layer captured an alias one of whose ends is not a token here. Written by `build-dependencies.mjs`. |
+| `collection` | `collection group collides with another collection after sanitisation` | `<collection name>` | Two collection names sanitise to the same group path. One entry per losing collection. |
+| `alias` | `cross-collection alias unresolvable in mode file` | `tokens/<collection>.<mode>.json (<n> references)` | A per-mode file references a token in another collection, which by definition is not in that file. One entry per mode file, never one per reference. Expected and harmless. |
+| `alias` | `circular alias chain` | `<path> -> <path> -> …` in chain order, starting at the lowest path | A Figma alias chain returns to its start. Every token in the chain is left out of the token files. |
+| `textStyle` | `unrecognised font style, defaulted to 400` | `<figma style name>` | A Figma font style name maps to no OpenType weight. |
+| `textStyle` | `used by a component but absent from typography.json` | `<figma style name>` | The dependency layer found a text style the inventory does not hold. |
+| `component` | `duplicate component id within source file` | `<figma name> (<file name>, node <nodeId>)` | Two components in one Figma file slug to the same id. |
+| `component` | `duplicate component id across source files` | `<figma name> (<file name>, node <nodeId>)` | Components from different files slug to the same id. |
+| `component` | `walked for dependencies but absent from components.json` | `<figma name>` | The dependency walk found a component the inventory does not list. |
+| `file` | `file not connected, components not walked` | `<figma file name>` | The user named a file for the dependency layer that the bridge was not paired with. |
+
+Three reason strings were improvised during the 2026-08-07 export against contract 1.1.0 and are **not** part of this set: `duplicate token path in merged tokens.json, already held by collection <name>`, `aliases a same-named variable in another collection, which a DTCG path cannot tell apart from a self-reference`, and `cross-collection alias whose path also names a variable in this collection, so it is ambiguous`. All three described losses that 2.0.0 makes unreachable. Do not carry them forward, and do not edit the snapshot that holds them — its `schemaVersion` is what keeps it readable.
+
+The validator warns, rather than fails, on a reason outside this table. A situation nobody anticipated should still be recorded; a warning makes the improvisation visible so the table can be extended deliberately, whereas an error would tempt an exporter to drop the note instead, which is the silent loss this whole section exists to prevent.
 
 ## components.json
 
 ```json
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "2.0.0",
   "components": [
     {
       "id": "actions/button",
@@ -135,7 +169,10 @@ Field rules:
 Field rules:
 
 - `id` is the slug of the component's full Figma name including its groups, keeping `/` as the separator. Unique within the file. This is the join key downstream consumers use, so it must be stable across runs.
-- `source` is the name of the Figma file the component came from, added in 1.1.0. It is always present, and is the same value for every entry when the library is one file. Two components from different files that slug to the same `id` cannot both be kept: keep the first by `source` then Figma order, and record the second in `notes.unmapped` with reason `duplicate component id across source files`. Suffixing the id would produce an id that exists in no Figma file.
+- `source` is the name of the Figma file the component came from, added in 1.1.0. It is always present,
+  and unlike a token's collection it is **not** part of the id: a component's Figma name is already unique
+  across the library in practice, and prefixing every id with a file name would break the join with code
+  and Storybook that this id exists to serve. Two files that do produce the same id are recorded, not renamed. and is the same value for every entry when the library is one file. Two components from different files that slug to the same `id` cannot both be kept: keep the first by `source` then Figma order, and record the second in `notes.unmapped` with reason `duplicate component id across source files`. Suffixing the id would produce an id that exists in no Figma file.
 - `name` is the last segment of the Figma name. `path` is the preceding segments in order, `[]` for a top-level component.
 - `kind` is `component` or `componentSet`.
 - `variants` maps each variant axis to its sorted values. A plain component gets `{}`.
@@ -148,24 +185,69 @@ Only published components and component sets are included. Individual variants i
 
 ## Token files
 
-Standard DTCG 2025.10. Figma variable collections and slash-separated name segments become nested groups. Group nesting mirrors Figma exactly, apart from the character sanitisation in `references/figma-mapping.md`.
+Standard DTCG 2025.10.
+
+**A token's path is its collection followed by its name.** The Figma collection name is sanitised and split on `/` into the outermost groups, then the variable's own slash-separated name segments follow. A variable called `Typography/Size/2xl` in the `Tokens` collection is keyed `Tokens.Typography.Size.2xl`, and a collection called `Primitives/Spacing` opens two groups, so its `spacing-100` is keyed `Primitives.Spacing.spacing-100`. Apart from the character sanitisation in `references/figma-mapping.md`, group nesting mirrors Figma exactly.
+
+This is what makes a token path a complete identity. DTCG identifies a token by its path alone and has no concept of collections, but Figma only requires a variable name to be unique *within* its collection — so without the collection in the path, two collections holding the same name cannot both be represented, and an alias from one to the other is indistinguishable from a token pointing at itself. Putting the collection at the front removes both problems by construction rather than by rule.
+
+The collection group appears in `tokens.json` **and** in every `tokens/<collection>.<mode>.json`, even though a per-mode file holds one collection and the group is therefore constant within it. Uniformity is the point: one token has one path everywhere in the snapshot, and a cross-collection reference reads the same in every file.
 
 ```json
 {
   "$schema": "https://www.designtokens.org/schemas/2025.10/format.json",
-  "colour": {
-    "$type": "color",
-    "brand": {
-      "primary": {
-        "$value": { "colorSpace": "srgb", "components": [0, 0.4, 0.8], "alpha": 1, "hex": "#0066cc" },
-        "$extensions": { "io.github.tiagopedras-twinkl.ds-snapshot": { "figmaName": "colour/brand/primary", "figmaType": "COLOR" } }
+  "Primitives": {
+    "colour": {
+      "$type": "color",
+      "brand": {
+        "primary": {
+          "$value": { "colorSpace": "srgb", "components": [0, 0.4, 0.8], "alpha": 1, "hex": "#0066cc" },
+          "$extensions": {
+            "io.github.tiagopedras-twinkl.ds-snapshot": {
+              "figmaCollection": "Primitives",
+              "figmaName": "colour/brand/primary",
+              "figmaType": "COLOR",
+              "figmaVariableId": "VariableID:12:340"
+            }
+          }
+        }
       }
     }
   }
 }
 ```
 
-Every token carries an extension object with at least `figmaName` (the original unsanitised Figma name) and `figmaType` (the Figma `resolvedType`). This is what makes the snapshot reversible: nothing about the source is lost to sanitisation.
+Every token carries an extension object with at least `figmaName` (the original unsanitised Figma name, without its collection), `figmaCollection` (the original unsanitised collection name), `figmaType` (the Figma `resolvedType`) and `figmaVariableId` (Figma's own identifier for the variable). This is what makes the snapshot reversible: nothing about the source is lost to sanitisation. `figmaCollection` also gives the dependency layer an exact key — a capture labels a variable `<collection>/<name>`, which is precisely `figmaCollection` + `/` + `figmaName`, so nothing has to be re-derived or split on a separator that appears inside both halves.
+
+`figmaCollection` and `figmaVariableId` are on tokens only. Text styles are not variables: they belong to no collection, so `typography.json` does not carry `figmaCollection` and its paths do not gain a group, and they carry `figmaStyleId` in place of a variable id.
+
+### figmaVariableId, and what it is good for
+
+`figmaVariableId` is Figma's own identifier, verbatim — `VariableID:12:340`. It is the only field in a snapshot that identifies a variable independently of what it is called or where it sits.
+
+That makes it the right key for **comparing two snapshots of the same Figma file**. A token path changes whenever a designer renames a variable or moves it into a different group, and that happens often: between the 2026-08-04 and 2026-08-07 snapshots of *1. Foundations*, 339 of 456 variables kept everything about themselves except their path. On ids, those are 339 unchanged variables; on paths, they are 339 deletions and 339 additions, and the real changes are lost in the noise.
+
+Its limits are as firm as its use:
+
+- **It is unique within one Figma file and means nothing outside it.** Two libraries in different files may hand out the same id for unrelated variables. Only compare ids between snapshots whose `source.figmaFileKey` — or failing that, `source.figmaFileName` — is the same.
+- **It survives a rename, a move and a value change; it does not survive deletion.** A variable deleted and recreated under the same name is a new id, correctly, because to Figma it is a new variable.
+- **It says nothing about intent.** Two ids being equal means Figma considers them the same variable, no more. A rename that changes what a token *means* still reads as unchanged, so an id match is the start of a diff, not the end of one.
+- **Ids are unique within each document.** No two tokens in one file may carry the same non-empty id; the validator rejects that, because it would mean one variable was written twice.
+
+It is `""` when the transport cannot supply it, and the key is always present. Never omit it to signal absence. An empty id is not a failure, but it does mean this snapshot cannot be compared to another by variable, so the validator says so.
+
+### Merging into tokens.json
+
+`tokens.json` holds each collection's default mode. Collections are merged in case-insensitive order of collection name, ties broken by byte order, which makes the result independent of the order Figma happened to return them in.
+
+Because each collection occupies its own group, two variables from different collections can no longer land on the same path. Only two collisions remain possible, and both are recorded rather than resolved silently:
+
+1. **Two collections whose names sanitise to the same group path.** The first by merge order keeps the group. Every variable of the second is left out and recorded once per variable in `notes.unmapped` as `kind: "variable"` with reason `token path already held by another collection`, plus one `kind: "collection"` entry with reason `collection group collides with another collection after sanitisation`.
+2. **A collection group whose path is already occupied by a token from an earlier collection** — possible when one collection is named `Primitives` and another `Primitives/Spacing`, and the first holds a variable actually named `Spacing`. The incumbent token wins; the arriving variables are recorded with reason `token path already held by another collection`.
+
+Collisions *within* one collection are a separate case, covered by `name collision after sanitisation` in `references/figma-mapping.md`.
+
+No variable is ever dropped from `tokens.json` for merely sharing a name with a variable in another collection. If that appears in `notes.unmapped`, the export is wrong, not the library.
 
 ### Extension namespace
 
@@ -214,15 +296,15 @@ The links between things the rest of the snapshot already names. It is not a sec
 
 ```json
 {
-  "schemaVersion": "1.1.0",
+  "schemaVersion": "2.0.0",
   "aliases": [
-    { "from": "action.primary", "to": "colour.blue.500", "mode": "Light" }
+    { "from": "Semantic.action.primary", "to": "Primitives.colour.blue.500", "mode": "Light" }
   ],
   "components": [
     {
       "id": "actions/button",
       "bindings": [
-        { "token": "space.sm", "properties": ["itemSpacing", "paddingLeft"] }
+        { "token": "Primitives.space.sm", "properties": ["itemSpacing", "paddingLeft"] }
       ],
       "typography": ["body.base"],
       "nests": [{ "id": "actions/icon", "count": 6 }],
@@ -235,11 +317,12 @@ The links between things the rest of the snapshot already names. It is not a sec
 
 Field rules:
 
-- **`aliases`** is one entry per variable per mode, so the same `from` and `to` pair repeats across modes. That repetition is the data: a token can point at a different primitive in each theme. Both ends are token paths as keyed in `tokens.json`. Sorted by `from`, then `mode`.
+- **`aliases`** is one entry per variable per mode, so the same `from` and `to` pair repeats across modes. That repetition is the data: a token can point at a different primitive in each theme. Both ends are token paths as keyed in `tokens.json`, so both name their collection and a cross-collection alias is stated as plainly as any other. Sorted by `from`, then `mode`.
+- `from` and `to` are never equal. A token cannot alias itself, and since 2.0.0 a token in one collection aliasing a same-named token in another is two distinct paths, so it is recorded like any other alias rather than collapsing into a self-reference.
 - Every alias must agree with the reference already in the matching `tokens/<collection>.<mode>.json`. The validator checks both directions, which is what stops this file drifting from the token files it summarises.
 - **`components`** has one entry per walked component that has at least one link, sorted by `id`. A component with no dependencies at all is left out — its absence is not a gap, and `components.json` already lists it.
 - All five keys inside an entry are always present, as arrays, empty when there is nothing. Never omit a key to signal absence.
-- **`bindings[].token`** is a path into `tokens.json`. **`properties`** is the Figma `boundVariables` keys, e.g. `fills`, `strokes`, `paddingLeft`, sorted. A token appears at most once per component, with its properties merged — two Figma variables sharing a name are one token here.
+- **`bindings[].token`** is a path into `tokens.json`, collection included. **`properties`** is the Figma `boundVariables` keys, e.g. `fills`, `strokes`, `paddingLeft`, sorted. A token appears at most once per component, with its properties merged. Two Figma variables that share a name but sit in different collections are two tokens here and get an entry each — before 2.0.0 they were merged into one, which is exactly the loss that version removed.
 - **`typography`** is paths into `typography.json`, sorted.
 - **`nests[].id`** is a component in `components.json`, with `count` instances found. Sorted by `id`.
 - **`nestsUncaptured`** is for a nested component that was not walked — usually one living in a Figma file the bridge was not paired with, or a private part. Kept by raw Figma `name`, sorted. This is how a real dependency on something outside the snapshot stays visible instead of looking like a component with no dependencies.

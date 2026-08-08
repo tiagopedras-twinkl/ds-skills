@@ -5,60 +5,110 @@ const root = process.argv[2] ?? "./.tmp/ds-snapshots/2026-08-03";
 mkdirSync(join(root, "tokens"), { recursive: true });
 const S = "https://www.designtokens.org/schemas/2025.10/format.json";
 const w = (p, o) => writeFileSync(join(root, p), JSON.stringify(o, null, 2) + "\n");
-const ext = (figmaName, figmaType) => ({ "io.github.tiagopedras-twinkl.ds-snapshot": { figmaName, figmaType } });
-
-const colour = (components, hex, figmaName) => ({
-  $value: { colorSpace: "srgb", components, alpha: 1, hex },
-  $extensions: ext(figmaName, "COLOR"),
+const ext = (figmaCollection, figmaName, figmaType, figmaVariableId) => ({
+  "io.github.tiagopedras-twinkl.ds-snapshot": { figmaCollection, figmaName, figmaType, figmaVariableId },
 });
 
+const colour = (components, hex, figmaName, id) => ({
+  $value: { colorSpace: "srgb", components, alpha: 1, hex },
+  $extensions: ext("Primitives", figmaName, "COLOR", id),
+});
+
+// Three collections, chosen to exercise the cases contract 2.0.0 exists for:
+//   - "Primitives" and "Semantic" both hold a variable called space/md, which Figma
+//     allows and a collection-free path cannot represent
+//   - the Semantic one aliases the Primitives one, which without collections in the
+//     path is indistinguishable from a token pointing at itself
+//   - "Primitives/Spacing" has a "/" in its own name, so its collection opens two
+//     groups and its capture label cannot be split on the first separator
 const primitives = {
   $schema: S,
-  colour: {
-    $type: "color",
-    blue: {
-      "500": colour([0, 0.4, 0.8], "#0066cc", "colour/blue/500"),
-      "700": colour([0, 0.2667, 0.6], "#004499", "colour/blue/700"),
+  Primitives: {
+    colour: {
+      $type: "color",
+      blue: {
+        "500": colour([0, 0.4, 0.8], "#0066cc", "colour/blue/500", "VariableID:1:1"),
+        "700": colour([0, 0.2667, 0.6], "#004499", "colour/blue/700", "VariableID:1:2"),
+      },
+    },
+    space: {
+      $type: "dimension",
+      md: { $value: { value: 16, unit: "px" }, $extensions: ext("Primitives", "space/md", "FLOAT", "VariableID:1:3") },
+      sm: { $value: { value: 8, unit: "px" }, $extensions: ext("Primitives", "space/sm", "FLOAT", "VariableID:1:4") },
     },
   },
-  space: {
-    $type: "dimension",
-    md: { $value: { value: 16, unit: "px" }, $extensions: ext("space/md", "FLOAT") },
-    sm: { $value: { value: 8, unit: "px" }, $extensions: ext("space/sm", "FLOAT") },
-  },
 };
 
-const semantic = {
+const primitivesSpacing = {
   $schema: S,
-  action: {
-    $type: "color",
-    primary: { $value: "{colour.blue.500}", $extensions: ext("action/primary", "COLOR") },
-  },
-  layout: {
-    gutter: { $type: "dimension", $value: { value: 16, unit: "px" }, $extensions: ext("layout/gutter", "FLOAT") },
+  Primitives: {
+    Spacing: {
+      gutter: {
+        $type: "dimension",
+        $value: { value: 24, unit: "px" },
+        $extensions: ext("Primitives/Spacing", "gutter", "FLOAT", "VariableID:2:1"),
+      },
+    },
   },
 };
 
-// tokens.json = default modes of both collections merged
+const semanticLight = {
+  $schema: S,
+  Semantic: {
+    action: {
+      $type: "color",
+      primary: {
+        $value: "{Primitives.colour.blue.500}",
+        $extensions: ext("Semantic", "action/primary", "COLOR", "VariableID:3:1"),
+      },
+    },
+    layout: {
+      gutter: {
+        $type: "dimension",
+        $value: { value: 16, unit: "px" },
+        $extensions: ext("Semantic", "layout/gutter", "FLOAT", "VariableID:3:2"),
+      },
+    },
+    space: {
+      $type: "dimension",
+      md: { $value: "{Primitives.space.md}", $extensions: ext("Semantic", "space/md", "FLOAT", "VariableID:3:3") },
+    },
+  },
+};
+
+const semanticDark = {
+  $schema: S,
+  Semantic: {
+    action: {
+      $type: "color",
+      primary: {
+        $value: "{Primitives.colour.blue.700}",
+        $extensions: ext("Semantic", "action/primary", "COLOR", "VariableID:3:1"),
+      },
+    },
+    layout: semanticLight.Semantic.layout,
+    space: semanticLight.Semantic.space,
+  },
+};
+
+// tokens.json = default modes of every collection merged, in case-insensitive
+// collection-name order. "Primitives" and "Primitives/Spacing" share a root group;
+// no path collides, because each collection's own segments keep them apart.
 const merged = {
   $schema: S,
-  action: semantic.action,
-  colour: primitives.colour,
-  layout: semantic.layout,
-  space: primitives.space,
+  Primitives: {
+    colour: primitives.Primitives.colour,
+    space: primitives.Primitives.space,
+    Spacing: primitivesSpacing.Primitives.Spacing,
+  },
+  Semantic: semanticLight.Semantic,
 };
 
 w("tokens.json", merged);
 w("tokens/primitives.value.json", primitives);
-w("tokens/semantic.light.json", semantic);
-w("tokens/semantic.dark.json", {
-  $schema: S,
-  action: {
-    $type: "color",
-    primary: { $value: "{colour.blue.700}", $extensions: ext("action/primary", "COLOR") },
-  },
-  layout: semantic.layout,
-});
+w("tokens/primitives-spacing.mode-1.json", primitivesSpacing);
+w("tokens/semantic.light.json", semanticLight);
+w("tokens/semantic.dark.json", semanticDark);
 
 w("typography.json", {
   $schema: S,
@@ -101,7 +151,7 @@ w("typography.json", {
 });
 
 w("components.json", {
-  schemaVersion: "1.1.0",
+  schemaVersion: "2.0.0",
   components: [
     {
       id: "actions/button",
@@ -143,20 +193,24 @@ w("components.json", {
 });
 
 // The optional dependency layer. Exercises every branch the validator has: a
-// resolved binding, a typography link, a nest inside the inventory, a nest that
-// was never walked, and a binding to a variable the snapshot does not hold.
+// resolved binding, a binding into a collection whose name contains "/", a
+// cross-collection alias between two same-named variables, a typography link, a nest
+// inside the inventory, a nest that was never walked, and a binding to a variable the
+// snapshot does not hold.
 w("dependencies.json", {
-  schemaVersion: "1.1.0",
+  schemaVersion: "2.0.0",
   aliases: [
-    { from: "action.primary", to: "colour.blue.700", mode: "Dark" },
-    { from: "action.primary", to: "colour.blue.500", mode: "Light" },
+    { from: "Semantic.action.primary", to: "Primitives.colour.blue.700", mode: "Dark" },
+    { from: "Semantic.action.primary", to: "Primitives.colour.blue.500", mode: "Light" },
+    { from: "Semantic.space.md", to: "Primitives.space.md", mode: "Dark" },
+    { from: "Semantic.space.md", to: "Primitives.space.md", mode: "Light" },
   ],
   components: [
     {
       id: "actions/button",
       bindings: [
-        { token: "action.primary", properties: ["fills"] },
-        { token: "space.sm", properties: ["itemSpacing", "paddingLeft"] },
+        { token: "Primitives.space.sm", properties: ["itemSpacing", "paddingLeft"] },
+        { token: "Semantic.action.primary", properties: ["fills"] },
       ],
       typography: ["body.base"],
       nests: [],
@@ -165,7 +219,10 @@ w("dependencies.json", {
     },
     {
       id: "layout/card",
-      bindings: [{ token: "layout.gutter", properties: ["itemSpacing"] }],
+      bindings: [
+        { token: "Primitives.Spacing.gutter", properties: ["paddingTop"] },
+        { token: "Semantic.layout.gutter", properties: ["itemSpacing"] },
+      ],
       typography: ["heading.level-1"],
       nests: [{ id: "actions/button", count: 2 }],
       nestsUncaptured: [],
@@ -175,8 +232,8 @@ w("dependencies.json", {
 });
 
 w("manifest.json", {
-  schemaVersion: "1.1.0",
-  generator: { skill: "ds-snapshot", skillVersion: "1.1.0" },
+  schemaVersion: "2.0.0",
+  generator: { skill: "ds-snapshot", skillVersion: "2.0.0" },
   exportedAt: "2026-08-03T09:14:22Z",
   spec: { designTokens: "2025.10" },
   source: {
@@ -187,18 +244,31 @@ w("manifest.json", {
   },
   collections: [
     { id: "primitives", name: "Primitives", defaultMode: "Value", modes: ["Value"], variableCount: 4 },
-    { id: "semantic", name: "Semantic", defaultMode: "Light", modes: ["Dark", "Light"], variableCount: 2 },
+    {
+      id: "primitives-spacing",
+      name: "Primitives/Spacing",
+      defaultMode: "Mode 1",
+      modes: ["Mode 1"],
+      variableCount: 1,
+    },
+    { id: "semantic", name: "Semantic", defaultMode: "Light", modes: ["Dark", "Light"], variableCount: 3 },
   ],
   files: [
     { path: "components.json", kind: "components" },
     { path: "dependencies.json", kind: "dependencies" },
     { path: "tokens.json", kind: "tokens-default" },
+    {
+      path: "tokens/primitives-spacing.mode-1.json",
+      kind: "tokens-mode",
+      collection: "Primitives/Spacing",
+      mode: "Mode 1",
+    },
     { path: "tokens/primitives.value.json", kind: "tokens-mode", collection: "Primitives", mode: "Value" },
     { path: "tokens/semantic.dark.json", kind: "tokens-mode", collection: "Semantic", mode: "Dark" },
     { path: "tokens/semantic.light.json", kind: "tokens-mode", collection: "Semantic", mode: "Light" },
     { path: "typography.json", kind: "typography" },
   ],
-  counts: { variables: 6, typographyStyles: 2, components: 1, componentSets: 2 },
+  counts: { variables: 8, typographyStyles: 2, components: 1, componentSets: 2 },
   dependencies: {
     captured: true,
     sources: [
@@ -206,15 +276,32 @@ w("manifest.json", {
       { figmaFileName: "Product Components", figmaFileKey: "", componentsWalked: 1 },
     ],
     counts: {
-      bindings: 3,
-      aliases: 2,
+      bindings: 4,
+      aliases: 4,
       nests: 1,
       nestsUncaptured: 1,
       typographyLinks: 2,
       unresolvedBindings: 1,
     },
   },
-  notes: { nonStandardTypes: [], unmapped: [] },
+  notes: {
+    nonStandardTypes: [],
+    // A per-mode file cannot hold the other collection's tokens, so every
+    // cross-collection reference in one is unresolvable there by definition. One
+    // entry per mode file, never one per reference.
+    unmapped: [
+      {
+        kind: "alias",
+        name: "tokens/semantic.dark.json (2 references)",
+        reason: "cross-collection alias unresolvable in mode file",
+      },
+      {
+        kind: "alias",
+        name: "tokens/semantic.light.json (2 references)",
+        reason: "cross-collection alias unresolvable in mode file",
+      },
+    ],
+  },
 });
 
 // The raw dependency captures that build-dependencies.mjs must turn into exactly the
@@ -255,7 +342,8 @@ c("walk-library.json", {
   },
 });
 
-// Step 2 again, for a second Figma file, unwrapped.
+// Step 2 again, for a second Figma file, unwrapped. The Primitives/Spacing binding is
+// the one that cannot be recovered by splitting the label on its first "/".
 c("walk-product.json", {
   fileName: "Product Components",
   components: [
@@ -263,7 +351,10 @@ c("walk-product.json", {
       figmaName: "Layout/Card",
       page: "Cards",
       type: "COMPONENT_SET",
-      bindings: [["Semantic/layout/gutter", ["itemSpacing"]]],
+      bindings: [
+        ["Semantic/layout/gutter", ["itemSpacing"]],
+        ["Primitives/Spacing/gutter", ["paddingTop"]],
+      ],
       instances: { "Actions/Button": 2 },
       // Raw, as a using file reports it: "S:<key>,<localNodeId>". It must still map to
       // heading.level-1, whose figmaStyleId is the bare key.
@@ -278,6 +369,10 @@ c("aliases.json", {
     aliases: [
       { from: "Semantic/action/primary", to: "Primitives/colour/blue/500", mode: "Light" },
       { from: "Semantic/action/primary", to: "Primitives/colour/blue/700", mode: "Dark" },
+      // Same variable name in two collections, one aliasing the other. Before 2.0.0
+      // both ends resolved to one path and the edge vanished without a trace.
+      { from: "Semantic/space/md", to: "Primitives/space/md", mode: "Light" },
+      { from: "Semantic/space/md", to: "Primitives/space/md", mode: "Dark" },
     ],
   },
 });
