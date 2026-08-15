@@ -80,13 +80,15 @@ It is written outside the snapshot folder on purpose — the contract lists ever
 
 ### Viewing it as a graph
 
-`scripts/to-ds-graph.mjs` converts a snapshot into the `graph.json` that the [ds-graph](https://github.com/tiagopedras-twinkl/ds-graph) viewer and its impact queries read:
+`scripts/to-ds-graph.mjs` converts a snapshot into a flat `graph.json` of nodes and links:
 
 ```
 node skills/ds-snapshot/scripts/to-ds-graph.mjs ds-snapshots/2026-08-03 graph.json
 ```
 
 It needs the dependency layer, and refuses rather than emitting an empty graph without it.
+
+The [ds-graph](https://github.com/tiagopedras-twinkl/ds-graph) viewer does not need this step — it opens a snapshot folder or bundle directly.
 
 Nothing in the output identifies a particular design system or organisation. The one namespaced value is the `$extensions` key, `io.github.tiagopedras-twinkl.ds-snapshot`, which is this repository's address and identifies the tool that wrote the metadata. The DTCG spec requires a vendor-specific extension key and recommends reverse domain notation to avoid clashes between tools. If you fork this, change that key to your own namespace.
 
