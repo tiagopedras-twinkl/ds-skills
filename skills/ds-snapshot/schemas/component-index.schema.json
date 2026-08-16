@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Component index",
+  "description": "A generated join of a snapshot's component inventory against the component docs written for them. Resolved layer: disposable, regenerated rather than edited, and deliberately not part of the snapshot contract. See references/component-index.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAt", "sources", "counts", "bySource", "components", "unmatchedDocs"],
+  "properties": {
+    "schemaVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The only field that changes between two runs over the same inputs."
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["snapshot", "docs", "map"],
+      "description": "What this index was built from. An index that cannot name its sources cannot be checked, so all three are required and `map` is explicitly null rather than absent when none was used.",
+      "properties": {
+        "snapshot": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "schemaVersion", "exportedAt", "componentFiles"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "schemaVersion": {
+              "type": ["string", "null"],
+              "description": "Contract version of the snapshot read. Null only when components.json carried none."
+            },
+            "exportedAt": { "type": ["string", "null"] },
+            "componentFiles": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "description": "Distinct `source` values found in the inventory, sorted. The Figma files this index covers."
+            }
+          }
+        },
+        "docs": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "fileCount"],
+          "properties": {
+            "path": { "type": "string", "minLength": 1 },
+            "fileCount": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Candidate pages considered: top-level .md files, less README.md and anything in the map's notComponentDocs."
+            }
+          }
+        },
+        "map": {
+          "type": ["string", "null"],
+          "description": "Path to the classification map, or null when none was found. Null means every Figma file was treated as documentable components, so a coverage figure may be diluted by assets."
+        }
+      }
+    },
+    "counts": {
+      "$ref": "#/$defs/tally",
+      "description": "Totals across every entry, plus `documentable`. `documented + missing + ambiguous + notApplicable` always equals `components`."
+    },
+    "bySource": {
+      "type": "object",
+      "description": "The same tally per Figma file. This is the figure to quote: one file holds icons and another holds components, so a single library-wide percentage mixes two populations.",
+      "additionalProperties": {
+        "allOf": [{ "$ref": "#/$defs/tally" }],
+        "required": ["isAssetSource"],
+        "properties": { "isAssetSource": { "type": "boolean" } }
+      }
+    },
+    "components": {
+      "type": "array",
+      "description": "Every component in the snapshot, sorted by id. Identity fields are restated from components.json rather than referenced, because this file is meant to be read on its own; it is a derived view, so the duplication is disposable.",
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "unmatchedDocs": {
+      "type": "array",
+      "description": "Pages no component claimed. Either the component was renamed in Figma, or the page is not a component doc and belongs in the map's notComponentDocs list.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "slug"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "slug": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "tally": {
+      "type": "object",
+      "required": ["components", "componentSets", "singles", "deprecated", "documented", "missing", "ambiguous", "notApplicable"],
+      "properties": {
+        "components": { "type": "integer", "minimum": 0 },
+        "componentSets": { "type": "integer", "minimum": 0 },
+        "singles": { "type": "integer", "minimum": 0 },
+        "deprecated": { "type": "integer", "minimum": 0 },
+        "documented": { "type": "integer", "minimum": 0 },
+        "missing": { "type": "integer", "minimum": 0 },
+        "ambiguous": { "type": "integer", "minimum": 0 },
+        "notApplicable": { "type": "integer", "minimum": 0 },
+        "documentable": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Entries not excluded as assets. The denominator for any coverage figure."
+        },
+        "isAssetSource": { "type": "boolean" }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "path", "kind", "source", "variantCombinations", "deprecated", "coverage"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*(?:/[a-z0-9]+(?:-[a-z0-9]+)*)*$",
+          "description": "Verbatim from components.json. The join key, unchanged, so this index can never introduce an identity of its own."
+        },
+        "name": { "type": "string", "minLength": 1 },
+        "path": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "kind": { "type": "string", "enum": ["component", "componentSet"] },
+        "source": { "type": "string", "minLength": 1 },
+        "variantCombinations": { "type": "integer", "minimum": 1 },
+        "deprecated": { "type": "boolean" },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["docs"],
+          "description": "One block per surface. Only `docs` exists at 1.0.0; `web` and `app` are the intended additions and would sit alongside it with the same shape.",
+          "properties": { "docs": { "$ref": "#/$defs/coverage" } }
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "path", "matchedBy", "candidates"],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": ["documented", "missing", "ambiguous", "not-applicable"],
+          "description": "`ambiguous` is never silently resolved: two things that could match means a person decides, via the map's aliases. `not-applicable` is an asset-source entry, excluded from the denominator."
+        },
+        "path": {
+          "type": ["string", "null"],
+          "description": "The page, relative to the Code folder. Null unless state is `documented`."
+        },
+        "matchedBy": {
+          "type": ["string", "null"],
+          "enum": ["alias", "id", "name", null],
+          "description": "Which rule fired. Recorded because a wrong match and a real doc are indistinguishable once both read as `documented`."
+        },
+        "candidates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The pages in contention when state is `ambiguous`. Empty otherwise."
+        },
+        "note": {
+          "type": "string",
+          "description": "Present only when something needs saying: an alias pointing at a missing file, or which components share a name."
+        }
+      }
+    }
+  }
+}

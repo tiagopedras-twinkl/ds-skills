@@ -26,6 +26,8 @@ ds-snapshots/<YYYY-MM-DD>/
 └── dependencies.json  what depends on what                        (optional)
 ```
 
+It writes into the working directory of the session that ran it — `snapshots/<YYYY-MM-DD>/` directly inside whatever folder you started the agent in, never inside the skill's own installed folder. So you choose where a capture lands by choosing where you run it from, which for the tree above means a data repository rather than a tools one. A second capture on the same day never overwrites the first; it becomes `<YYYY-MM-DD>-2`.
+
 A token is keyed by its collection followed by its name — `Primitives.Typography.Size.2xl`. Figma only makes a variable name unique *within* a collection, so the collection is half the identity; leaving it out means two collections cannot both be represented and an alias between them is indistinguishable from a token pointing at itself. Contract 2.0.0 changed this and is a breaking change for anything joining on a token path. See [`output-contract.md`](skills/ds-snapshot/references/output-contract.md), "Reading a snapshot written before 2.0.0".
 
 Every token also records `figmaVariableId`, Figma's own id for the variable. A path changes whenever someone renames a variable or moves it into another group; the id does not. For comparing two snapshots **of the same Figma file**, that is the key to join on — see "figmaVariableId, and what it is good for" for what it cannot tell you.
@@ -89,6 +91,18 @@ node skills/ds-snapshot/scripts/to-ds-graph.mjs ds-snapshots/2026-08-03 graph.js
 It needs the dependency layer, and refuses rather than emitting an empty graph without it.
 
 The [ds-graph](https://github.com/tiagopedras-twinkl/ds-graph) viewer does not need this step — it opens a snapshot folder or bundle directly.
+
+### Checking what is documented
+
+`scripts/build-component-index.mjs` joins a snapshot's components against a folder of component docs, and writes the answer as a JSON for tools and a Markdown for reading:
+
+```
+node skills/ds-snapshot/scripts/build-component-index.mjs ds-snapshots/2026-08-03 --docs ../ds-docs/component-docs
+```
+
+Also written outside the snapshot folder, and for a second reason beyond the contract: whether a doc exists is a fact about the docs folder rather than about Figma, so an index kept inside a dated capture would go stale while its source stayed untouched. It reads a folder or a bundle and needs no Figma connection, so coverage can be refreshed without re-capturing.
+
+Coverage is reported per Figma file rather than as one figure, because a foundations file holds hundreds of icons that nobody writes usage guidance for, and one ratio spanning both populations answers a question nobody asked. Which files those are is a judgement, so it lives in a hand-owned `index-map.json` beside the docs; the script reads it and never writes it. [`references/component-index.md`](skills/ds-snapshot/references/component-index.md) has the matching rules and why an ambiguous match is left for a person to settle.
 
 Nothing in the output identifies a particular design system or organisation. The one namespaced value is the `$extensions` key, `io.github.tiagopedras-twinkl.ds-snapshot`, which is this repository's address and identifies the tool that wrote the metadata. The DTCG spec requires a vendor-specific extension key and recommends reverse domain notation to avoid clashes between tools. If you fork this, change that key to your own namespace.
 

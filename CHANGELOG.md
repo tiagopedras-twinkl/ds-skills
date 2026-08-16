@@ -3,6 +3,59 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
+## The component index — 2026-08-16
+
+Not a contract change. The snapshot folder, every file in it, and the validator are untouched, and
+that is the point: the index is generated *beside* a snapshot, never inside one.
+
+The library had no single answer to "how many components are there" or "which have no guidance
+yet". `components.json` held the population, `ds-docs/component-docs/` held the pages, and the join
+between them was a hand-kept list that went stale. Both cells were already named in
+`ds-snapshots/inventory/DOMAINS.md` as resolved-layer artifacts; this fills them.
+
+- **New step 9**, after validation, whenever the run captured components. Writes
+  `component-index.json` and `component-index.md` into the session's working directory, beside
+  `snapshots/` rather than in it.
+- **Outside the snapshot on purpose.** The contract forbids adding a file, but the deeper reason is
+  that doc coverage is a fact about the docs folder, not about Figma — an index inside a dated
+  capture would go stale while its source stayed untouched. It reads a folder or a bundle, so it
+  re-runs with no Figma connection.
+- **Coverage is reported per Figma file, never as one percentage.** The 2026-08-04 capture holds 322
+  components, of which 235 are icons in the Foundations file. Across all 322 the figure reads 7%
+  documented; across the 87 real components it reads 25%. A hand-owned `index-map.json` separates
+  them, with `assetSources` and `componentSources` as two explicit lists so that a file in neither
+  is genuinely undecided and is reported every run — in the Markdown as well as on the terminal,
+  because the file outlives the terminal. A branch capture carries the branch name as its source,
+  so each branch needs a line.
+- **A capture holding only assets produces no index**, and the script says which files it walked.
+  The 2026-08-08 pair are that case: an index there would report "0 of 0 documented" beside "22
+  pages matched no component", which reads as an alarm about the docs rather than a capture that
+  walked no component file.
+- **An ambiguous match is never resolved by guessing.** Three matching rules in a fixed order, the
+  one that fired recorded on every entry, and anything that could match two pages listed for a
+  person to settle. `app/header` and `web/header` are the live case.
+- New `references/component-index.md`, `schemas/component-index.schema.json`,
+  `scripts/build-component-index.mjs`, and `dist/ds-snapshot.skill` is rebuilt.
+
+## Where a capture lands — 2026-08-16
+
+Not a contract change. The snapshot folder, every file in it, and the validator are untouched.
+
+The rule was written as "the directory the skill is run from", which reads two ways: the folder the
+user is working in, and the folder the skill itself is installed in. Only the first is ever right,
+and the second is where a capture is invisible — nothing downstream reads inside a tool, and a
+reinstall can take it with it.
+
+- **The target is the session's working directory**, the one `pwd` prints before the skill touches
+  anything. The skill now reads it rather than reasoning about it, and states it plainly as never
+  being the skill's own folder, the scratchpad, or a temp directory.
+- **No `cd` during a run.** The shortcut that caused this is moving into the skill folder to run
+  `node scripts/…`; every example now calls the scripts by their full path from the session's
+  directory instead, in `SKILL.md` and in `dependency-capture.md`.
+- Raw dependency captures go to a temporary working directory — never into the snapshot folder,
+  whose contents the contract fixes, and never into the skill folder.
+- README says where a capture lands, and `dist/ds-snapshot.skill` is rebuilt.
+
 ## Contract 2.0.0 — 2026-08-08
 
 **Breaking.** A token's path now begins with its Figma collection: `Typography.Size.2xl` becomes

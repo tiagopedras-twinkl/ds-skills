@@ -204,11 +204,13 @@ Every id the walk collected should resolve here. One that does not means a compo
 
 ## Building dependencies.json
 
-Save each step's result to a file — the whole result, envelope and all; the builder unwraps it. When the bridge auto-saves a large result, that saved file *is* the input, so nothing large needs to pass through context. Then run:
+Save each step's result to a file — the whole result, envelope and all; the builder unwraps it. When the bridge auto-saves a large result, that saved file *is* the input, so nothing large needs to pass through context. Put those files in a temporary working directory, never inside `snapshots/<YYYY-MM-DD>/` — the contract lists every file a snapshot may hold and a raw capture is not one — and never inside the skill's own folder. Then run:
 
 ```bash
-node scripts/build-dependencies.mjs ds-snapshots/<YYYY-MM-DD> <capture-file...>
+node <skill>/scripts/build-dependencies.mjs snapshots/<YYYY-MM-DD> <capture-file...>
 ```
+
+`<skill>` is the full path to the skill folder; the snapshot path is relative to the session's working directory. Run it from there, without changing directory.
 
 Pass every capture file in any order. It writes `dependencies.json`, fills in the manifest's dependency block, and prints anything for `manifest.notes.unmapped`.
 
