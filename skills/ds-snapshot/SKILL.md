@@ -5,7 +5,7 @@ description: Export the Figma design system library (variables, typography style
 
 # Design system snapshot
 
-Export the Figma design system library into `snapshots/<YYYY-MM-DD>/`, under the directory the skill is run from, as a fixed set of JSON files.
+Export the Figma design system library into `snapshots/<YYYY-MM-DD>/`, under the user's current working directory, as a fixed set of JSON files.
 
 The point of this skill is the contract, not the export. Downstream consumers (parity audits, docs, diffs between dates, code generation, impact analysis) all read the same field names in the same places, so the snapshot format must be identical every run regardless of what Figma returns. Variables and typography use the Design Tokens Community Group format 2025.10, which is a real interoperable standard. Component inventory and the dependency layer use local schemas, because no standard for either exists yet.
 
@@ -60,9 +60,13 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
 ## Steps
 
-1. **Set the target.** `<cwd>/snapshots/<YYYY-MM-DD>/`, using today's date, where `<cwd>` is the directory the skill is run from. Create `snapshots/` there if it does not exist.
+1. **Set the target.** `<session-cwd>/snapshots/<YYYY-MM-DD>/`, using today's date. `<session-cwd>` is **the user's working directory for this session** — the project folder the conversation started in, the one `pwd` prints before this skill touches anything. Run `pwd` and use what it returns; do not reconstruct the path from memory. Create `snapshots/` there if it does not exist.
 
-   That is the whole rule. Always a folder named `snapshots`, always directly inside the current directory. Never walk up looking for an existing folder, never write outside the current directory, and never pick a different name because the surroundings suggest one. The user chooses where a capture lands by choosing where to run the skill from, and a skill that second-guesses that is how captures end up somewhere nothing reads.
+   **`<session-cwd>` is never the skill's own folder.** The skill is installed somewhere else entirely — a plugin folder, `~/.claude/skills/`, a `dist/*.skill` bundle — and a snapshot written next to `SKILL.md` is a snapshot inside a tool, where no consumer will ever look and where it may be wiped on the next install. The same goes for the scratchpad and for any temporary directory: those are for working files, and a snapshot is the deliverable.
+
+   For the same reason, **never `cd` anywhere while running this skill**, least of all into the skill folder to shorten a `node scripts/...` command. Stay in `<session-cwd>` and call every script by its full path from the skill folder, as the examples below do. A `cd` that moves the working directory is exactly how a capture ends up beside the tool instead of beside the data.
+
+   That is the whole rule. Always a folder named `snapshots`, always directly inside the session's working directory. Never walk up looking for an existing folder, never write outside that directory, and never pick a different name because the surroundings suggest one. The user chooses where a capture lands by choosing where to start the session, and a skill that second-guesses that is how captures end up somewhere nothing reads.
 
    **Never overwrite an existing snapshot.** If `<YYYY-MM-DD>/` is already there, add a number: `<YYYY-MM-DD>-2`, then `-3`, and so on, taking the first free one. Do the same when only the bundle exists — `ds-snapshot-<YYYY-MM-DD>.bundle.json` beside the folder means that date is taken.
 
@@ -86,13 +90,29 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
 7. **Write `manifest.json`** describing the snapshot, including collections, modes, counts, which files the dependency layer was captured from, and anything that could not be mapped. When the layer was skipped, `dependencies.captured` is `false` with empty sources and zero counts — the keys are always present. When it ran, `build-dependencies.mjs` has already filled that block in and printed anything for `notes.unmapped`; add those entries rather than dropping them. Every `notes.unmapped` reason comes from the fixed table in `references/output-contract.md`, "Reason strings" — never write your own wording for a case the table covers, or two runs of the same situation will not compare.
 
-8. **Validate.** Run `node scripts/validate-snapshot.mjs` against the target folder from step 1, suffix included. Fix every error and re-run until it passes. Report warnings to the user but they do not block.
+8. **Validate.** Run `node <skill>/scripts/validate-snapshot.mjs` against the target folder from step 1, suffix included — `<skill>` being the full path to this skill's own folder. Fix every error and re-run until it passes. Report warnings to the user but they do not block.
 
-9. **Report.** Open with **coverage**, before any count: which of the four parts this snapshot holds, and which Figma file each came from. Take the component files from the distinct `source` values in `components.json` rather than from memory of what was asked for. Then the headline counts, anything in `manifest.notes.unmapped`, and how the counts moved against the previous snapshot if one exists.
+9. **Build the component index** — whenever the snapshot holds components, and only after step 8 passes. It joins `components.json` against the component docs folder, so the library has one generated answer to "how many components are there" and "which have no guidance yet" instead of a hand-kept list that goes stale.
+
+   ```bash
+   node <skill>/scripts/build-component-index.mjs snapshots/<YYYY-MM-DD>
+   ```
+
+   It writes `component-index.json` and `component-index.md` **into `<session-cwd>`, beside `snapshots/` and never inside it.** The index is not a snapshot file: the contract forbids adding one, and more importantly doc coverage is a fact about the docs folder rather than about Figma, so an index inside a dated capture would go stale while its source stayed untouched. Read `references/component-index.md` before changing anything about it. Unlike a capture, the index is current rather than dated and is overwritten every run — it is disposable, and it names the snapshot it came from.
+
+   Skip it, and say you skipped it, when the run captured no components — an index of an empty inventory is a file that reports zero of everything. The script refuses that case rather than writing one.
+
+   Two things in its output need passing on to the user rather than swallowing. **Ambiguous entries** are components it would not guess a doc for, and each needs one line in the map to settle; never resolve one by picking a page yourself. **Pages matching no component** are usually a component renamed in Figma, which is a finding about the library and not about the docs. Both are in the Markdown under their own headings.
+
+   The default docs folder is `../ds-docs/component-docs`, a sibling of the folder the capture ran from. Pass `--docs` when it is somewhere else, and never `cd` to make the default fit.
+
+10. **Report.** Open with **coverage**, before any count: which of the four parts this snapshot holds, and which Figma file each came from. Take the component files from the distinct `source` values in `components.json` rather than from memory of what was asked for. Then the headline counts, anything in `manifest.notes.unmapped`, and how the counts moved against the previous snapshot if one exists.
 
    State plainly, in the first line, when a part is missing. "This snapshot holds tokens and text styles from *1. Foundations*. It holds no components and no dependency layer." A reader who has to work that out from a zero is a reader who will not.
 
    When the dependency layer ran, add what is worth acting on: bindings that resolved to nothing, components nested but never walked, and which files were walked. If the repo has a parity audit and the user asked for one, run it now; the snapshot itself is complete either way.
+
+    When step 9 ran, give the documentation figure **per Figma file**, the way the index reports it. Never quote one library-wide percentage: a foundations file holds hundreds of icons and a components file holds the components anyone documents, and one ratio across both answers a question nobody asked. If the index found no map, say that the figure includes assets and is therefore diluted.
 
    If the folder holding `snapshots/` carries a README that catalogues the captures, add a row for this one. A catalogue that is only current for some of the snapshots is worse than none.
 
@@ -101,8 +121,10 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 `scripts/to-bundle.mjs` packs a validated snapshot into a single JSON file, for uploading to a tool, attaching to a message, or handing to another agent:
 
 ```bash
-node scripts/to-bundle.mjs snapshots/<YYYY-MM-DD>
+node <skill>/scripts/to-bundle.mjs snapshots/<YYYY-MM-DD>
 ```
+
+`<skill>` is the full path to this skill's folder, and the snapshot path is relative to the session's working directory — so run it from there rather than moving into the skill folder.
 
 It is a container, not a second format. Each file's content sits verbatim under its contract path, so `bundle.files["tokens.json"]` is still a standalone valid DTCG document and `bundle.files["components.json"]` is still exactly `components.json`. Nothing is merged, renamed, or flattened, which is what keeps one upload interchangeable with the folder — and keeps the token files readable by any DTCG tool once pulled back out.
 
@@ -115,7 +137,7 @@ The bundle is written **outside** the snapshot folder. The contract lists every 
 `scripts/to-ds-graph.mjs` converts a validated snapshot into a flat `graph.json` of nodes and links:
 
 ```bash
-node scripts/to-ds-graph.mjs snapshots/<YYYY-MM-DD> graph.json
+node <skill>/scripts/to-ds-graph.mjs snapshots/<YYYY-MM-DD> graph.json
 ```
 
 It needs the dependency layer. Without it there are no links to draw, and the script says so and stops.
@@ -135,8 +157,11 @@ If the user wants any of these, treat it as a contract change (below) rather tha
 - `references/output-contract.md` — the fixed file layout, every field, and the ordering rules. Read before writing any file.
 - `references/figma-mapping.md` — how Figma types, units, names, and modes become DTCG. Read when converting anything by hand.
 - `references/dependency-capture.md` — the code for step 6, single-file and multi-file, and the Figma API behaviours that make it necessary.
+- `references/component-index.md` — the index built in step 9: why it sits outside the snapshot, how a component is matched to its doc, and why coverage is reported per Figma file.
 - `schemas/components.schema.json`, `schemas/dependencies.schema.json`, `schemas/manifest.schema.json` — the published contract for other tools.
+- `schemas/component-index.schema.json` — the index format. Not part of the snapshot contract.
 - `scripts/validate-snapshot.mjs` — the gate. Node, no dependencies.
+- `scripts/build-component-index.mjs` — joins a snapshot's components against the docs folder. Reads a folder or a bundle, so it can be re-run without a Figma connection.
 - `scripts/build-dependencies.mjs` — turns raw captures into `dependencies.json` and fills in the manifest block.
 - `scripts/to-bundle.mjs`, `scripts/from-bundle.mjs` — pack a snapshot into one shareable file and unpack it again.
 - `scripts/to-ds-graph.mjs` — converts a snapshot into a ds-graph `graph.json`.
