@@ -78,6 +78,8 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
 3. **Write the merged `tokens.json`** from each collection's default mode, merged in case-insensitive collection-name order. This is the primary artifact most consumers read. Because each collection has its own group, no variable is ever dropped for sharing a name with one in another collection; if you find yourself writing such a note, the export is wrong.
 
+   Every token also carries `modes` in its extension payload — every mode of its collection, mapped to the value the token takes in that mode, taken from the per-mode files written in step 2. That is what lets this one file answer a question about themes, for a consumer that cannot open a folder. The validator compares the two in both directions, so never write `modes` from anything but the per-mode values themselves.
+
 4. **Export typography.** Use `figma_get_styles` for text styles, map them to `typography` composite tokens, and write `typography.json`. Text styles are separate Figma entities from variables, so they never appear in `tokens.json`. Line height and letter spacing conversions are the fiddly part, so follow `references/figma-mapping.md` exactly rather than improvising.
 
 5. **Build the component inventory.** Use `figma_get_design_system_kit`, then `figma_analyze_component_set` for each component set to get its variant axes and actual variant count. Write `components.json`. Inventory only: name, location, kind, variant axes and values, variant count, description, deprecation, and which file it came from. No layout or spec properties, and no bindings — those belong to step 6.
@@ -92,27 +94,11 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
 8. **Validate.** Run `node <skill>/scripts/validate-snapshot.mjs` against the target folder from step 1, suffix included — `<skill>` being the full path to this skill's own folder. Fix every error and re-run until it passes. Report warnings to the user but they do not block.
 
-9. **Build the component index** — whenever the snapshot holds components, and only after step 8 passes. It joins `components.json` against the component docs folder, so the library has one generated answer to "how many components are there" and "which have no guidance yet" instead of a hand-kept list that goes stale.
-
-   ```bash
-   node <skill>/scripts/build-component-index.mjs snapshots/<YYYY-MM-DD>
-   ```
-
-   It writes `component-index.json` and `component-index.md` **into `<session-cwd>`, beside `snapshots/` and never inside it.** The index is not a snapshot file: the contract forbids adding one, and more importantly doc coverage is a fact about the docs folder rather than about Figma, so an index inside a dated capture would go stale while its source stayed untouched. Read `references/component-index.md` before changing anything about it. Unlike a capture, the index is current rather than dated and is overwritten every run — it is disposable, and it names the snapshot it came from.
-
-   Skip it, and say you skipped it, when the run captured no components — an index of an empty inventory is a file that reports zero of everything. The script refuses that case rather than writing one.
-
-   Two things in its output need passing on to the user rather than swallowing. **Ambiguous entries** are components it would not guess a doc for, and each needs one line in the map to settle; never resolve one by picking a page yourself. **Pages matching no component** are usually a component renamed in Figma, which is a finding about the library and not about the docs. Both are in the Markdown under their own headings.
-
-   The default docs folder is `../ds-docs/component-docs`, a sibling of the folder the capture ran from. Pass `--docs` when it is somewhere else, and never `cd` to make the default fit.
-
-10. **Report.** Open with **coverage**, before any count: which of the four parts this snapshot holds, and which Figma file each came from. Take the component files from the distinct `source` values in `components.json` rather than from memory of what was asked for. Then the headline counts, anything in `manifest.notes.unmapped`, and how the counts moved against the previous snapshot if one exists.
+9. **Report.** Open with **coverage**, before any count: which of the four parts this snapshot holds, and which Figma file each came from. Take the component files from the distinct `source` values in `components.json` rather than from memory of what was asked for. Then the headline counts, anything in `manifest.notes.unmapped`, and how the counts moved against the previous snapshot if one exists.
 
    State plainly, in the first line, when a part is missing. "This snapshot holds tokens and text styles from *1. Foundations*. It holds no components and no dependency layer." A reader who has to work that out from a zero is a reader who will not.
 
    When the dependency layer ran, add what is worth acting on: bindings that resolved to nothing, components nested but never walked, and which files were walked. If the repo has a parity audit and the user asked for one, run it now; the snapshot itself is complete either way.
-
-    When step 9 ran, give the documentation figure **per Figma file**, the way the index reports it. Never quote one library-wide percentage: a foundations file holds hundreds of icons and a components file holds the components anyone documents, and one ratio across both answers a question nobody asked. If the index found no map, say that the figure includes assets and is therefore diluted.
 
    If the folder holding `snapshots/` carries a README that catalogues the captures, add a row for this one. A catalogue that is only current for some of the snapshots is worse than none.
 
@@ -157,11 +143,8 @@ If the user wants any of these, treat it as a contract change (below) rather tha
 - `references/output-contract.md` — the fixed file layout, every field, and the ordering rules. Read before writing any file.
 - `references/figma-mapping.md` — how Figma types, units, names, and modes become DTCG. Read when converting anything by hand.
 - `references/dependency-capture.md` — the code for step 6, single-file and multi-file, and the Figma API behaviours that make it necessary.
-- `references/component-index.md` — the index built in step 9: why it sits outside the snapshot, how a component is matched to its doc, and why coverage is reported per Figma file.
 - `schemas/components.schema.json`, `schemas/dependencies.schema.json`, `schemas/manifest.schema.json` — the published contract for other tools.
-- `schemas/component-index.schema.json` — the index format. Not part of the snapshot contract.
 - `scripts/validate-snapshot.mjs` — the gate. Node, no dependencies.
-- `scripts/build-component-index.mjs` — joins a snapshot's components against the docs folder. Reads a folder or a bundle, so it can be re-run without a Figma connection.
 - `scripts/build-dependencies.mjs` — turns raw captures into `dependencies.json` and fills in the manifest block.
 - `scripts/to-bundle.mjs`, `scripts/from-bundle.mjs` — pack a snapshot into one shareable file and unpack it again.
 - `scripts/to-ds-graph.mjs` — converts a snapshot into a ds-graph `graph.json`.

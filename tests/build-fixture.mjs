@@ -104,7 +104,41 @@ const merged = {
   Semantic: semanticLight.Semantic,
 };
 
-w("tokens.json", merged);
+// Contract 2.1.0 also repeats every mode's value on the token itself, under
+// $extensions.modes, so tokens.json alone answers a question about themes. The
+// per-mode files stay as they are — each is a standalone DTCG document — and the
+// validator compares the two, so this copy cannot drift from them.
+//
+// Derived here rather than written by hand, for the same reason the exporter derives
+// it: a hand-kept second copy is exactly the thing that goes stale.
+const MODE_DOCS = {
+  Primitives: { Value: primitives },
+  "Primitives/Spacing": { "Mode 1": primitivesSpacing },
+  Semantic: { Dark: semanticDark, Light: semanticLight },
+};
+const NS = "io.github.tiagopedras-twinkl.ds-snapshot";
+function* eachToken(node, path = []) {
+  for (const [k, v] of Object.entries(node)) {
+    if (k.startsWith("$") || typeof v !== "object" || v === null) continue;
+    if ("$value" in v) yield [[...path, k].join("."), v];
+    else yield* eachToken(v, [...path, k]);
+  }
+}
+const valueAt = (doc, path) => path.split(".").reduce((n, s) => n?.[s], doc)?.$value;
+function withModes(doc) {
+  for (const [path, token] of eachToken(doc)) {
+    const payload = token.$extensions[NS];
+    const docs = MODE_DOCS[payload.figmaCollection] ?? {};
+    payload.modes = Object.fromEntries(
+      Object.keys(docs)
+        .sort((a, b) => (a.toLowerCase() < b.toLowerCase() ? -1 : 1))
+        .map((mode) => [mode, valueAt(docs[mode], path)])
+    );
+  }
+  return doc;
+}
+
+w("tokens.json", withModes(JSON.parse(JSON.stringify(merged))));
 w("tokens/primitives.value.json", primitives);
 w("tokens/primitives-spacing.mode-1.json", primitivesSpacing);
 w("tokens/semantic.light.json", semanticLight);
@@ -151,7 +185,7 @@ w("typography.json", {
 });
 
 w("components.json", {
-  schemaVersion: "2.0.0",
+  schemaVersion: "2.1.0",
   components: [
     {
       id: "actions/button",
@@ -198,7 +232,7 @@ w("components.json", {
 // inside the inventory, a nest that was never walked, and a binding to a variable the
 // snapshot does not hold.
 w("dependencies.json", {
-  schemaVersion: "2.0.0",
+  schemaVersion: "2.1.0",
   aliases: [
     { from: "Semantic.action.primary", to: "Primitives.colour.blue.700", mode: "Dark" },
     { from: "Semantic.action.primary", to: "Primitives.colour.blue.500", mode: "Light" },
@@ -232,8 +266,8 @@ w("dependencies.json", {
 });
 
 w("manifest.json", {
-  schemaVersion: "2.0.0",
-  generator: { skill: "ds-snapshot", skillVersion: "2.0.0" },
+  schemaVersion: "2.1.0",
+  generator: { skill: "ds-snapshot", skillVersion: "2.1.0" },
   exportedAt: "2026-08-03T09:14:22Z",
   spec: { designTokens: "2025.10" },
   source: {

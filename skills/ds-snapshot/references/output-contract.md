@@ -1,4 +1,4 @@
-# Output contract v2.0.0
+# Output contract v2.1.0
 
 Every snapshot has exactly this layout. No extra files, no missing files.
 
@@ -27,6 +27,25 @@ Every token file, including `tokens.json` and `typography.json`, is a standalone
 "$schema": "https://www.designtokens.org/schemas/2025.10/format.json"
 ```
 
+## Reading a snapshot written before 2.1.0
+
+2.1.0 only adds a key, so it breaks nothing. Every token in `tokens.json` now carries
+`$extensions[…].modes`, an object of every mode of its collection to the value the token
+takes in that mode. A consumer that ignores the key reads exactly what it read before.
+
+The point is that `tokens.json` alone is now a complete answer about themes. Before 2.1.0
+it held one mode per collection — the default — and every other mode lived only in
+`tokens/<collection>.<mode>.json`. A consumer that could not open a folder, a browser file
+picker being the obvious one, had no way to reach them at all.
+
+The per-mode files are unchanged and are not going away. Each is a standalone DTCG document
+that any token tool can read, which is the one thing an `$extensions` payload can never be.
+The two are checked against each other in both directions by the validator, so the copy in
+`tokens.json` cannot drift from the folder it summarises.
+
+Branch on `manifest.schemaVersion`: `2.0.x` has no `modes` key and needs the per-mode files
+to answer a theme question; `2.1.x` and later carry it on the token.
+
 ## Reading a snapshot written before 2.0.0
 
 2.0.0 changes what a token path looks like, so it is a breaking change for anything that joins on one. A consumer must branch on `manifest.schemaVersion`:
@@ -53,8 +72,8 @@ These rules exist so that `git diff` between two snapshot folders shows design c
 
 ```json
 {
-  "schemaVersion": "2.0.0",
-  "generator": { "skill": "ds-snapshot", "skillVersion": "2.0.0" },
+  "schemaVersion": "2.1.0",
+  "generator": { "skill": "ds-snapshot", "skillVersion": "2.1.0" },
   "exportedAt": "2026-08-03T09:14:22Z",
   "spec": { "designTokens": "2025.10" },
   "source": {
@@ -147,7 +166,7 @@ The validator warns, rather than fails, on a reason outside this table. A situat
 
 ```json
 {
-  "schemaVersion": "2.0.0",
+  "schemaVersion": "2.1.0",
   "components": [
     {
       "id": "actions/button",
@@ -209,7 +228,10 @@ The collection group appears in `tokens.json` **and** in every `tokens/<collecti
               "figmaCollection": "Primitives",
               "figmaName": "colour/brand/primary",
               "figmaType": "COLOR",
-              "figmaVariableId": "VariableID:12:340"
+              "figmaVariableId": "VariableID:12:340",
+              "modes": {
+                "Value": { "colorSpace": "srgb", "components": [0, 0.4, 0.8], "alpha": 1, "hex": "#0066cc" }
+              }
             }
           }
         }
@@ -237,6 +259,35 @@ Its limits are as firm as its use:
 - **Ids are unique within each document.** No two tokens in one file may carry the same non-empty id; the validator rejects that, because it would mean one variable was written twice.
 
 It is `""` when the transport cannot supply it, and the key is always present. Never omit it to signal absence. An empty id is not a failure, but it does mean this snapshot cannot be compared to another by variable, so the validator says so.
+
+### modes, and why the per-mode files stay
+
+Added in 2.1.0. Every token in `tokens.json` carries `modes` in its extension payload: an
+object keyed by every mode its collection declares, whose values are exactly the `$value`
+that mode's file gives the token. Mode names sort case-insensitively. The key is present on
+every token, including those in a collection with a single mode, where it holds one entry —
+uniformity costs a line and saves every consumer a special case.
+
+It is in `$extensions` rather than in `$value` because DTCG has no concept of a mode and
+there is no legal way to put five values on one token. `$extensions` is the spec's own
+escape hatch: a tool that does not know the key ignores it and still reads a valid default.
+Inventing a `$modes` sibling would make the file invalid, and every standard token tool
+would stop reading it.
+
+`modes` is only on tokens in `tokens.json`. A per-mode file holds one mode by definition, so
+repeating it there would say nothing, and `typography.json` has no modes at all.
+
+**The per-mode files stay, and are still the source.** Each is a standalone DTCG document
+that Style Dictionary or Tokens Studio can open directly to build one theme, which an
+extension payload can never be. `modes` exists so that one file can answer a theme question
+— for a consumer reading over HTTP, or a browser tool handed a single file through a picker,
+which cannot reach a sibling on disk at all.
+
+Two copies of anything can disagree, so the validator compares them in both directions:
+every mode a collection declares must be present on the token and equal the per-mode file's
+value, and nothing a per-mode file holds may be missing from `modes`. That makes the copy
+structural rather than a promise. When the two disagree, the per-mode file is right — it is
+the one written from Figma.
 
 ### Merging into tokens.json
 
@@ -298,7 +349,7 @@ The links between things the rest of the snapshot already names. It is not a sec
 
 ```json
 {
-  "schemaVersion": "2.0.0",
+  "schemaVersion": "2.1.0",
   "aliases": [
     { "from": "Semantic.action.primary", "to": "Primitives.colour.blue.500", "mode": "Light" }
   ],

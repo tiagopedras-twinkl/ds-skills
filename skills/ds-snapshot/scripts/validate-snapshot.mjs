@@ -4,14 +4,15 @@
 // Exits 0 when the snapshot is valid, 1 when it is not. Warnings never fail the run.
 //
 // Version-gated checks. The dependency layer (dependencies.json) arrived in 1.1.0
-// and is optional. Collection-first token paths arrived in 2.0.0. Each check is
-// gated on the snapshot's own schemaVersion, so older snapshots stay valid — that
-// is what their schemaVersion is for, and rewriting them is never the fix.
+// and is optional. Collection-first token paths arrived in 2.0.0, and every mode's
+// value on the token in tokens.json arrived in 2.1.0. Each check is gated on the
+// snapshot's own schemaVersion, so older snapshots stay valid — that is what their
+// schemaVersion is for, and rewriting them is never the fix.
 
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, posix } from "node:path";
 
-const CONTRACT_VERSION = "2.0.0";
+const CONTRACT_VERSION = "2.1.0";
 const DTCG_SCHEMA = "https://www.designtokens.org/schemas/2025.10/format.json";
 const SPEC_TYPES = new Set([
   "color", "dimension", "fontFamily", "fontWeight", "duration", "cubicBezier",
@@ -61,6 +62,18 @@ if (!existsSync(root) || !statSync(root).isDirectory()) {
 
 const isPlainObject = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 const isAlias = (v) => typeof v === "string" && /^\{[^{}]+\}$/.test(v);
+// Key order must not decide whether two values are the same. tokens.json and a
+// per-mode file are written by the same exporter here, but a third-party writer
+// need not order an object's keys the way this one does.
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  }
+  if (!isPlainObject(a) || !isPlainObject(b)) return false;
+  const ka = Object.keys(a), kb = Object.keys(b);
+  return ka.length === kb.length && ka.every((k) => k in b && deepEqual(a[k], b[k]));
+}
 const sorted = (arr) =>
   arr.every((v, i) => i === 0 || arr[i - 1].toLowerCase() <= v.toLowerCase());
 const SEMVER = /^\d+\.\d+\.\d+$/;
@@ -383,6 +396,10 @@ const atLeast = (major, minor) =>
   declaredVersion[0] > major || (declaredVersion[0] === major && declaredVersion[1] >= minor);
 const HAS_DEPENDENCY_LAYER = atLeast(1, 1);
 const HAS_COLLECTION_PATHS = atLeast(2, 0);
+// 2.1.0: every token in tokens.json carries its value in every mode, under
+// $extensions.modes. The per-mode files stay, and this is checked against them in
+// both directions, so the one file a consumer has to load cannot drift from them.
+const HAS_MODE_VALUES = atLeast(2, 1);
 
 if (manifest) {
   const M = "manifest.json";
@@ -568,6 +585,14 @@ const typography = validateTokenDoc("typography.json", readJson("typography.json
 const modeAliases = new Map();
 const modeAliasKey = (path, mode) => `${path} ${mode}`;
 
+// (tokenPath, modeName) -> the value that per-mode file gives the token. Contract
+// 2.1.0 repeats these under $extensions.modes in tokens.json, so one file can answer
+// a question about themes. Derived data nobody checks is data that drifts, so the two
+// are compared below in both directions.
+const modeValues = new Map();
+const modeValueInfo = new Map(); // the same key -> { path, mode }, so the reverse check can name what is missing
+const modeValueKey = (path, mode) => `${path} ${mode}`;
+
 for (const f of declared.filter((f) => f?.kind === "tokens-mode")) {
   if (!onDisk.includes(f.path)) continue;
   const doc = readJson(f.path);
@@ -580,6 +605,8 @@ for (const f of declared.filter((f) => f?.kind === "tokens-mode")) {
   if (f.path !== expected) err(f.path, `filename is off contract, expected ${expected}`);
   for (const [path, t] of res.tokens ?? []) {
     if (isAlias(t.value)) modeAliases.set(modeAliasKey(path, f.mode), t.value.slice(1, -1));
+    modeValues.set(modeValueKey(path, f.mode), t.value);
+    modeValueInfo.set(modeValueKey(path, f.mode), { path, mode: f.mode });
   }
   for (const t of res.usedTypes ?? []) {
     if (EXTRA_TYPES.has(t) && !(manifest?.notes?.nonStandardTypes ?? []).includes(t)) {
@@ -590,6 +617,74 @@ for (const f of declared.filter((f) => f?.kind === "tokens-mode")) {
 for (const t of defaultTokens.usedTypes ?? []) {
   if (EXTRA_TYPES.has(t) && !(manifest?.notes?.nonStandardTypes ?? []).includes(t)) {
     err("manifest.json", `notes.nonStandardTypes must list "${t}", used in tokens.json`);
+  }
+}
+
+// ------------------------------------------------- 2.1.0: every mode on the token
+// The token format has no concept of modes, which is why the per-mode files exist and
+// why they cannot go away: each one is a standalone DTCG document any tool can read.
+// But it makes the one file most consumers load an incomplete answer, and a consumer
+// that cannot open a folder — a browser file picker, say — could not get the rest at
+// all. 2.1.0 repeats each mode's value on the token itself, inside $extensions, which
+// is the spec's own escape hatch: a tool that does not know the key ignores it and
+// still reads a valid default.
+//
+// The cost of repeating anything is that the two copies can disagree. So this checks
+// them against each other in both directions, which makes the copy structural rather
+// than a promise.
+if (HAS_MODE_VALUES) {
+  const modesOfCollection = new Map();
+  for (const c of manifest?.collections ?? []) modesOfCollection.set(c?.name, c?.modes ?? []);
+  const recorded = new Set();
+
+  for (const [path, t] of defaultTokens.tokens ?? []) {
+    const ext = nsPayload(t.node?.$extensions);
+    const modes = ext.modes;
+    if (!isPlainObject(modes)) {
+      err(
+        "tokens.json",
+        `${path} has no modes object in $extensions, which contract 2.1.0 requires on every token; it holds ` +
+          `the token's value in each of its collection's modes, so this one file can answer a question about themes`
+      );
+      continue;
+    }
+    const names = Object.keys(modes);
+    if (!sorted(names)) err("tokens.json", `${path} modes are not sorted case-insensitively`);
+    const expected = modesOfCollection.get(ext.figmaCollection) ?? [];
+    for (const m of expected) {
+      if (!(m in modes)) {
+        err("tokens.json", `${path} records no value for mode "${m}", which its collection "${ext.figmaCollection}" declares`);
+      }
+    }
+    for (const m of names) {
+      if (expected.length && !expected.includes(m)) {
+        err("tokens.json", `${path} records a mode "${m}" that its collection "${ext.figmaCollection}" does not declare`);
+        continue;
+      }
+      const key = modeValueKey(path, m);
+      recorded.add(key);
+      if (!modeValues.has(key)) continue; // that per-mode file is missing, reported already
+      if (!deepEqual(modes[m], modeValues.get(key))) {
+        err(
+          "tokens.json",
+          `${path} gives mode "${m}" a value that disagrees with tokens/${slug(ext.figmaCollection)}.${slug(m)}.json; ` +
+            `the per-mode file is the one written from Figma, so this copy is the one that is wrong`
+        );
+      }
+    }
+  }
+
+  // And the other direction: nothing a per-mode file holds may be missing here, or the
+  // merged file would be quietly narrower than the folder it claims to summarise.
+  if ((defaultTokens.tokens?.size ?? 0) > 0) {
+    for (const [key, where] of modeValueInfo) {
+      if (recorded.has(key)) continue;
+      err(
+        "tokens.json",
+        `the per-mode token files give ${where.path} a value in "${where.mode}", which tokens.json does not ` +
+          `record under $extensions.modes`
+      );
+    }
   }
 }
 

@@ -98,4 +98,4 @@ Figma text styles are not variables. Read them with `figma_get_styles` and map t
 
 ## Effect and grid styles
 
-Out of scope for the contract as of v2.0.0. Do not add them to a snapshot ad hoc. If they are needed, change the contract properly: bump `schemaVersion`, add the file to the layout, and update the validator.
+Out of scope for the contract as of v2.1.0. Do not add them to a snapshot ad hoc. If they are needed, change the contract properly: bump `schemaVersion`, add the file to the layout, and update the validator.

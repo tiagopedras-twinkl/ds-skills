@@ -3,39 +3,33 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
-## The component index — 2026-08-16
+## Contract 2.1.0 — 2026-08-16
 
-Not a contract change. The snapshot folder, every file in it, and the validator are untouched, and
-that is the point: the index is generated *beside* a snapshot, never inside one.
+**Additive.** Nothing moves and nothing is renamed, so a consumer that ignores the new key reads
+exactly what it read before.
 
-The library had no single answer to "how many components are there" or "which have no guidance
-yet". `components.json` held the population, `ds-docs/component-docs/` held the pages, and the join
-between them was a hand-kept list that went stale. Both cells were already named in
-`ds-snapshots/inventory/DOMAINS.md` as resolved-layer artifacts; this fills them.
+Every token in `tokens.json` now carries `modes` in its `$extensions` payload: each mode its
+collection declares, mapped to the value the token takes in that mode.
 
-- **New step 9**, after validation, whenever the run captured components. Writes
-  `component-index.json` and `component-index.md` into the session's working directory, beside
-  `snapshots/` rather than in it.
-- **Outside the snapshot on purpose.** The contract forbids adding a file, but the deeper reason is
-  that doc coverage is a fact about the docs folder, not about Figma — an index inside a dated
-  capture would go stale while its source stayed untouched. It reads a folder or a bundle, so it
-  re-runs with no Figma connection.
-- **Coverage is reported per Figma file, never as one percentage.** The 2026-08-04 capture holds 322
-  components, of which 235 are icons in the Foundations file. Across all 322 the figure reads 7%
-  documented; across the 87 real components it reads 25%. A hand-owned `index-map.json` separates
-  them, with `assetSources` and `componentSources` as two explicit lists so that a file in neither
-  is genuinely undecided and is reported every run — in the Markdown as well as on the terminal,
-  because the file outlives the terminal. A branch capture carries the branch name as its source,
-  so each branch needs a line.
-- **A capture holding only assets produces no index**, and the script says which files it walked.
-  The 2026-08-08 pair are that case: an index there would report "0 of 0 documented" beside "22
-  pages matched no component", which reads as an alarm about the docs rather than a capture that
-  walked no component file.
-- **An ambiguous match is never resolved by guessing.** Three matching rules in a fixed order, the
-  one that fired recorded on every entry, and anything that could match two pages listed for a
-  person to settle. `app/header` and `web/header` are the live case.
-- New `references/component-index.md`, `schemas/component-index.schema.json`,
-  `scripts/build-component-index.mjs`, and `dist/ds-snapshot.skill` is rebuilt.
+The problem it fixes is that `tokens.json` held one mode per collection — the default — and every
+other mode lived only in `tokens/<collection>.<mode>.json`. So the file most consumers load was
+not a complete answer about themes, and a consumer that cannot open a folder could not reach the
+rest at all. That is the ordinary case in a browser: a file picker hands over the files chosen and
+cannot reach a sibling on disk.
+
+- **In `$extensions`, not beside `$value`.** DTCG has no concept of a mode and no legal way to put
+  five values on one token. `$extensions` is the spec's own escape hatch, so `tokens.json` stays a
+  valid token document that Style Dictionary or Tokens Studio still reads. A `$modes` sibling
+  would have made it invalid.
+- **The per-mode files stay, and stay the source.** Each is a standalone DTCG document, which an
+  extension payload can never be, and that is what you hand a build that wants one theme.
+- **The two are checked against each other in both directions.** Every mode a collection declares
+  must be on the token and equal the per-mode file's value, and nothing a per-mode file holds may
+  be missing from `modes`. Two copies nobody compares are two copies that drift.
+- `modes` is on tokens in `tokens.json` alone. A per-mode file holds one mode by definition, and
+  text styles have no modes at all.
+- ds-graph reads themes from the token, falling back to the per-mode files for a snapshot below
+  2.1.0. Its graph is identical either way, and it no longer needs the folder.
 
 ## Where a capture lands — 2026-08-16
 
