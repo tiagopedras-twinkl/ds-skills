@@ -3,6 +3,48 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
+## ds-web-snapshot captures token usage — 2026-08-18
+
+Not a contract change; `ds-figma-snapshot`'s output is untouched. `ds-web-snapshot` now writes a
+fourth file next to `components.json`, `modules.json` and `icons.json`: `tokens.json`, produced by
+`skills/ds-web-snapshot/scripts/scan-tokens.mjs`.
+
+The skill's first non-negotiable used to be "CodeGraph is the source", and that is why tokens sat
+unbuilt: CodeGraph indexes symbols, and a design token is not one — it is a CSS custom property
+that Tailwind turns into class names, so `codegraph query "color-brand"` returns an empty list and
+always will. The rule is now scoped to symbols, with tokens named as the single exception and
+every token entry carrying `"method": "text-scan"` so the two kinds of evidence cannot be quietly
+mixed in a report.
+
+- **What is counted.** Every `--name: value;` in `ui/themes/*.css`, with its value per theme, then
+  each token's generated utility classes (`--color-brand` → `bg-brand`, `text-brand`, …), any
+  hand-written `var(--token)`, and breakpoints in their variant form (`lg:`, `max-lg:`). Matching
+  is bounded at both ends, so `bg-brand` never counts a `bg-brand-subtle`.
+- **Where, not just how often.** Hits are split into source, stories and tests, and into `ui/` — the
+  design system itself — versus product code. A token used only inside `ui/` has been built but not
+  adopted, which is a different finding from unused, and `totals` keeps the four groups separate.
+- **A script, against the skill's own grain.** Steps 1–4 stay hand-run CodeGraph calls because they
+  need judgement. Token counting needs none, just thousands of exact matches, so it is scripted and
+  was verified against independent `ripgrep` runs — the counts matched exactly.
+- **The known limit.** A class name assembled at runtime is invisible to a text scan. The stronger
+  method is to build the Tailwind CSS and read the utilities it generated; that needs a working
+  build and minutes rather than a second, so it stays a deliberate upgrade rather than a fallback.
+
+First run, `web_snapshots/2026-08-18/tokens.json`: 475 tokens declared, 201 reaching product code,
+236 never referenced — 186 of those raw palette shades, which is how they are meant to be. It also
+turned up all 21 `--dimension-*` tokens sitting at zero because that namespace generates no classes
+at all; that one is now in `DS-KNOWN-ISSUES.md`.
+
+## Skill renamed to ds-figma-snapshot — 2026-08-17
+
+Not a contract change. `ds-snapshot` is now `ds-figma-snapshot`, so it reads as one of several
+`ds-` skills in this repository rather than the generic name for a snapshot.
+
+The output is untouched: the `$extensions` namespace (`io.github.tiagopedras-twinkl.ds-snapshot`),
+the `generator.skill` field, and the `ds-snapshot-<date>.bundle.json` filename convention all still
+say `ds-snapshot`, on both past and future captures. Only the skill's own name, folder, and
+documentation changed.
+
 ## Contract 2.1.0 — 2026-08-16
 
 **Additive.** Nothing moves and nothing is renamed, so a consumer that ignores the new key reads

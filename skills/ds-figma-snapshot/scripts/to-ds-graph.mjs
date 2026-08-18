@@ -35,7 +35,7 @@ const deps = read("dependencies.json");
 if (!deps) {
   console.error(
     `${src} has no dependency layer, so there are no links to draw.\n` +
-      `Re-run ds-snapshot and answer yes when it asks whether you want dependencies.`
+      `Re-run ds-figma-snapshot and answer yes when it asks whether you want dependencies.`
   );
   process.exit(1);
 }

@@ -2,44 +2,44 @@
 
 Figma is the richest source of the three, but a token dump alone still isn't
 enough — it tells you what exists, not how it's actually composed on a page.
-Use two layers together: a `ds-snapshot` (or a live equivalent) for exact
+Use two layers together: a `ds-figma-snapshot` (or a live equivalent) for exact
 token values, and rendered screenshots for the prose that describes how those
 tokens combine.
 
 ## Layer 1 — tokens, text styles, components
 
-**Prefer a `ds-snapshot` over reading Figma live**, when one exists and is
+**Prefer a `ds-figma-snapshot` over reading Figma live**, when one exists and is
 recent:
 
-- Check for `ds-snapshots/<date>/` (or a `.bundle.json`) in the current
+- Check for `ds-snapshots/figma_snapshots/<date>/` (or a `.bundle.json`) in the current
   project. If one exists and is reasonably fresh, read `tokens.json`,
   `typography.json`, and `components.json` directly — this is already
   DTCG-format, already validated, and cheaper than re-querying Figma.
 - If it's stale or missing and the user wants a one-off document rather than
   a maintained snapshot, it's fine to read Figma live instead of invoking the
-  full `ds-snapshot` skill. But if the user is going to want this file kept
+  full `ds-figma-snapshot` skill. But if the user is going to want this file kept
   in sync over time, or wants the dependency layer (what components bind
-  which tokens), point them at `ds-snapshot` instead of duplicating its work
+  which tokens), point them at `ds-figma-snapshot` instead of duplicating its work
   here.
 
 **Reading live**, when no snapshot applies:
 
 - Confirm the Desktop Bridge is paired (`figma_get_status` with
-  `probe: true`) before anything else, exactly as `ds-snapshot` does. Don't
+  `probe: true`) before anything else, exactly as `ds-figma-snapshot` does. Don't
   fall back to the REST transport for variable reads — same reasoning as
   that skill: unreliable on non-Enterprise plans, and a partial capture is
   worse than none.
 - `figma_get_variables` / `figma_export_tokens` for colour and spacing/radius
   variables, `figma_get_styles` for text styles, `figma_get_design_system_kit`
   plus `figma_analyze_component_set` for the component inventory. This is
-  exactly `ds-snapshot`'s step 2, 4, and 5 — reuse its
+  exactly `ds-figma-snapshot`'s step 2, 4, and 5 — reuse its
   `references/figma-mapping.md` for the DTCG conversion rules rather than
   improvising unit or line-height conversions.
 - **A design system spanning several files** (a common Foundations /
   Components / Modules split) needs the bridge paired on every file whose
   components you want to read. Variables and text styles resolve across
   files on their own; components don't. Ask which files are open with
-  `figma_list_open_files` before starting, same as `ds-snapshot` does.
+  `figma_list_open_files` before starting, same as `ds-figma-snapshot` does.
 
 ## Layer 2 — how it's actually used
 
@@ -66,7 +66,7 @@ looking at real frames:
 
 ## Mapping to the frontmatter
 
-Follow the same collection/mode/id logic `ds-snapshot` uses if you're reading
+Follow the same collection/mode/id logic `ds-figma-snapshot` uses if you're reading
 a snapshot — `references/figma-mapping.md` in that skill covers unit and
 name conversion in detail; don't re-derive it here. In short:
 

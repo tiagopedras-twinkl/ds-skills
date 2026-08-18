@@ -2,7 +2,7 @@
 
 Agent Skills for design system work.
 
-## ds-snapshot
+## ds-figma-snapshot
 
 Exports a Figma design system library into a dated, fixed-format snapshot on disk.
 
@@ -17,7 +17,7 @@ The snapshot has two parts. The **inventory** — what the library contains — 
 ### Output
 
 ```
-ds-snapshots/<YYYY-MM-DD>/
+ds-snapshots/figma_snapshots/<YYYY-MM-DD>/
 ├── manifest.json      source, collections, modes, counts, unmapped items
 ├── tokens.json        default mode of every collection, merged, plus every mode per token
 ├── tokens/<collection>.<mode>.json
@@ -26,15 +26,15 @@ ds-snapshots/<YYYY-MM-DD>/
 └── dependencies.json  what depends on what                        (optional)
 ```
 
-It writes into the working directory of the session that ran it — `snapshots/<YYYY-MM-DD>/` directly inside whatever folder you started the agent in, never inside the skill's own installed folder. So you choose where a capture lands by choosing where you run it from, which for the tree above means a data repository rather than a tools one. A second capture on the same day never overwrites the first; it becomes `<YYYY-MM-DD>-2`.
+It writes into the working directory of the session that ran it — `figma_snapshots/<YYYY-MM-DD>/` directly inside whatever folder you started the agent in, never inside the skill's own installed folder. So you choose where a capture lands by choosing where you run it from, which for the tree above means a data repository rather than a tools one. A second capture on the same day never overwrites the first; it becomes `<YYYY-MM-DD>-2`.
 
-A token is keyed by its collection followed by its name — `Primitives.Typography.Size.2xl`. Figma only makes a variable name unique *within* a collection, so the collection is half the identity; leaving it out means two collections cannot both be represented and an alias between them is indistinguishable from a token pointing at itself. Contract 2.0.0 changed this and is a breaking change for anything joining on a token path. See [`output-contract.md`](skills/ds-snapshot/references/output-contract.md), "Reading a snapshot written before 2.0.0".
+A token is keyed by its collection followed by its name — `Primitives.Typography.Size.2xl`. Figma only makes a variable name unique *within* a collection, so the collection is half the identity; leaving it out means two collections cannot both be represented and an alias between them is indistinguishable from a token pointing at itself. Contract 2.0.0 changed this and is a breaking change for anything joining on a token path. See [`output-contract.md`](skills/ds-figma-snapshot/references/output-contract.md), "Reading a snapshot written before 2.0.0".
 
 Every token also records `modes` — every mode its collection declares, mapped to the value the token takes in that one. That is what makes `tokens.json` on its own a complete answer about themes, rather than the default mode with the rest in a folder beside it that a consumer holding one file cannot reach. It sits in `$extensions` because the token format has no concept of a mode and no legal way to put five values on one token; the per-mode files are unchanged, are still the source, and the validator compares the two in both directions. Added in contract 2.1.0, and additive — ignore the key and the file reads as it always did.
 
 Every token also records `figmaVariableId`, Figma's own id for the variable. A path changes whenever someone renames a variable or moves it into another group; the id does not. For comparing two snapshots **of the same Figma file**, that is the key to join on — see "figmaVariableId, and what it is good for" for what it cannot tell you.
 
-The full contract is in [`output-contract.md`](skills/ds-snapshot/references/output-contract.md). Figma-to-DTCG conversion rules are in [`figma-mapping.md`](skills/ds-snapshot/references/figma-mapping.md).
+The full contract is in [`output-contract.md`](skills/ds-figma-snapshot/references/output-contract.md). Figma-to-DTCG conversion rules are in [`figma-mapping.md`](skills/ds-figma-snapshot/references/figma-mapping.md).
 
 ### The dependency layer
 
@@ -53,14 +53,14 @@ It is a set of links between things the snapshot already names, not a second inv
 
 **Multiple Figma files.** Variables and text styles resolve across files on their own, so a components file binding a foundations file's variables needs only one connection. Components are the exception: one can only be walked in a file the bridge is paired with. So if you want the dependencies of components in several files, open the Desktop Bridge plugin on each of them — the skill asks which files at the start and reports which it walked.
 
-Capture code and the Figma behaviours that shape it are in [`dependency-capture.md`](skills/ds-snapshot/references/dependency-capture.md). `scripts/build-dependencies.mjs` turns the raw captures into `dependencies.json`, reading the Figma-name-to-token-path mapping out of the snapshot's own `$extensions` rather than re-deriving it.
+Capture code and the Figma behaviours that shape it are in [`dependency-capture.md`](skills/ds-figma-snapshot/references/dependency-capture.md). `scripts/build-dependencies.mjs` turns the raw captures into `dependencies.json`, reading the Figma-name-to-token-path mapping out of the snapshot's own `$extensions` rather than re-deriving it.
 
 ### Sharing it as one file
 
 A snapshot is a folder, because the token files are standalone DTCG documents that off-the-shelf tools can read as-is. For uploading, attaching, or handing to another tool, pack it into one file:
 
 ```
-node skills/ds-snapshot/scripts/to-bundle.mjs ds-snapshots/2026-08-03
+node skills/ds-snapshot/scripts/to-bundle.mjs ds-snapshots/figma_snapshots/2026-08-03
 ```
 
 ```json
@@ -87,7 +87,7 @@ It is written outside the snapshot folder on purpose — the contract lists ever
 `scripts/to-ds-graph.mjs` converts a snapshot into a flat `graph.json` of nodes and links:
 
 ```
-node skills/ds-snapshot/scripts/to-ds-graph.mjs ds-snapshots/2026-08-03 graph.json
+node skills/ds-snapshot/scripts/to-ds-graph.mjs ds-snapshots/figma_snapshots/2026-08-03 graph.json
 ```
 
 It needs the dependency layer, and refuses rather than emitting an empty graph without it.
@@ -116,7 +116,7 @@ Claude.ai: zip a skill folder and upload it under Settings, Capabilities, Skills
 ### Validate a snapshot by hand
 
 ```
-node skills/ds-snapshot/scripts/validate-snapshot.mjs ds-snapshots/2026-08-03
+node skills/ds-snapshot/scripts/validate-snapshot.mjs ds-snapshots/figma_snapshots/2026-08-03
 ```
 
 Exits 0 when valid, 1 with a list of problems when not. Warnings are reported but do not fail.
@@ -135,7 +135,7 @@ Three source types, each with its own gathering strategy:
 
 - **A codebase** — find the token source (Tailwind config, a tokens file, CSS custom properties, a theme object) before reading components, then ground the prose in what actually renders rather than the token file alone. [`reference/source-repo.md`](skills/ds-design-md/reference/source-repo.md).
 - **A brand guidelines deck** — PDF, Keynote, or a standalone HTML deck. States intent (palette, type specimens, voice) far more reliably than implementation (spacing, radii, component states) — the resulting file is expected to be thinner, and says so in Known Gaps rather than padding out values the deck never gave. [`reference/source-deck.md`](skills/ds-design-md/reference/source-deck.md).
-- **A Figma library** — prefers reading an existing `ds-snapshot` over querying Figma live, then grounds the prose in screenshots of real frames, since a token map alone never shows how tokens actually compose on a page. [`reference/source-figma.md`](skills/ds-design-md/reference/source-figma.md).
+- **A Figma library** — prefers reading an existing `ds-figma-snapshot` over querying Figma live, then grounds the prose in screenshots of real frames, since a token map alone never shows how tokens actually compose on a page. [`reference/source-figma.md`](skills/ds-design-md/reference/source-figma.md).
 
 A structural validator checks the result before it's reported done:
 
