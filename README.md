@@ -125,6 +125,33 @@ Beyond field and type checks it proves the parts agree with each other: every co
 
 What it reports rather than rejects: bindings to variables the snapshot does not hold, and components nested but never walked. Both are gaps worth seeing, not reasons to fail a snapshot.
 
+## ds-web-snapshot
+
+The code-side counterpart to `ds-figma-snapshot`: not what the Figma library contains, but what the codebase itself has and uses — components, CMS modules, icons and design tokens in `twinkl-web`, pulled via [CodeGraph](https://www.npmjs.com/package/@colbymchenry/codegraph) and written to a dated snapshot in `ds-snapshots/web_snapshots/`.
+
+The point of the rewrite that shipped contract 2.0.0 is in the name: *snapshot*, not *lookup*. Earlier, `components.json` and `modules.json` only ever held the names someone handed the skill — in practice, whatever Figma's inventory happened to list — so a component built in code and never added to Figma was invisible, and the file was really answering "what does Figma think exists" wearing a code-side label. Every run now discovers the full set straight from the code's own export graph first, and a caller-supplied list only adds a second lens on top of that: which of the discovered names were the ones asked about, and which asked-about names don't exist in code at all. `tokens.json` always worked this way — `requested: []` when nobody named specific tokens, every declared token scanned regardless — and now the other three match it.
+
+### Output
+
+```
+ds-snapshots/web_snapshots/<YYYY-MM-DD>/
+├── components.json          real Twinkl UI components, requested + discovered
+├── modules.json             CMS modules, same shape
+├── icons.json               icon components, same shape
+├── tokens.json              every design token declared in ui/themes/*.css
+└── discovered-exports.json  the raw export-walk behind the three above (supporting evidence, not part of the contract)
+```
+
+`components.json`, `modules.json` and `icons.json` share one shape, contract `schemaVersion` **2.0.0**: `requested` and `notFound` keep their pre-2.0.0 meaning (a caller's list, and which of those names don't exist in code), `items` now holds *every* discovered name whether or not it was ever requested, and a new `foundNotRequested` array names the ones that were built but never asked about — the group the old shape had no way to surface at all. Each item also carries a `requestedByCaller` flag so a consumer doesn't have to cross-reference the top-level arrays. A file with no `schemaVersion` field predates the rewrite; treat every one of its items as implicitly requested, the same way it always worked.
+
+Discovery — the "what does the code actually export" question — comes from `scripts/discover-exports.mjs`, which walks each tree's real barrel files (`export { X } from`, `export * from`) to a concrete declaration, rather than from a text search. It also mines CMS modules' generated Sanity schema types for a Storybook-argTypes equivalent, since modules have no `*.stories.tsx` of their own — on the 2026-08-18 `twinkl-web` snapshot that took module `argTypes` coverage from 0 of 30 to 40 of 43. Component `argTypes` come from an actual sibling stories file's `meta` object, copied verbatim; a `null` there is usually a real, checked absence in the source rather than a capture gap, and an empty `argTypes: {}` is kept distinct from `null` for the same reason — both are reported in the skill's output rather than collapsed into one "has metadata" number.
+
+Token usage is measured separately, by `scripts/scan-tokens.mjs`, because a design token is a CSS custom property rather than a code symbol — CodeGraph cannot see it, so it's found by scanning for the Tailwind utility classes each token generates and any direct `var(--token)` reference instead. Every token entry carries `"method": "text-scan"` so this evidence is never confused with CodeGraph's for the other three files.
+
+### Requirements
+
+CodeGraph indexed in the code repo (e.g. `twinkl-web`) — the skill checks and initializes it if missing. Run from that repo's working directory, not from `ds-skills` or `ds-snapshots`.
+
 ## ds-design-md
 
 Writes a `DESIGN-<name>.md` — a design-token frontmatter plus a prose write-up of a product or brand's visual system — from an existing codebase, a brand guidelines deck, or a Figma design system library.

@@ -3,6 +3,56 @@
 Contract versions are independent of skill versions. A skill change that does not alter the
 output shape does not bump the contract.
 
+## ds-web-snapshot contract 2.0.0 — discovery replaces lookup — 2026-08-22
+
+**Breaking**, for `components.json`, `modules.json` and `icons.json`; `tokens.json` is unchanged
+(it already worked this way). Both files add `schemaVersion` for the first time — absent means
+pre-2.0.0, the same convention `ds-figma-snapshot` uses.
+
+The skill's own description used to say it turns "a list of names into real usage counts" — a
+framing that was the bug, not just an imprecise summary of one. `requested` came from whoever
+called the skill, in practice the Figma library's own inventory, so a component built in code and
+never added to Figma was invisible: the file answered "what does Figma think exists", wearing a
+code-side label. `tokens.json` had never worked that way — it scanned every declared token
+regardless of what, if anything, was asked about — and the fix is to bring the other three in line
+with it rather than the other way round.
+
+- **`items` now holds every name the code exports**, not just requested ones, found by a new
+  `scripts/discover-exports.mjs` that walks each tree's real barrel files (`export { X } from`,
+  `export * from`) to a concrete declaration before Steps 1-4 ever run. `requested` and `notFound`
+  keep their old meaning; a new `foundNotRequested` array names what discovery turned up that the
+  caller's list never mentioned, and each item carries `requestedByCaller` so a consumer doesn't
+  have to cross-reference the top-level arrays.
+- **The scale of what was missing.** On `twinkl-web`, icons alone: 310 names had been requested
+  (evidently sourced from Figma), the design system inventory held 238 icon records, and discovery
+  found 319 real exports — 9 (`social-media/`, `native/`) that had never been in any list at all.
+  Components went from 75 requested to 293 discovered; modules from 30 requested to 43.
+- **Module `argTypes` went from 0 of 30 to 40 of 43.** CMS modules have no Storybook stories to read
+  a `meta.argTypes` from, so this used to just be uncaptured. `discover-exports.mjs` now mines each
+  module's generated Sanity schema type instead — the editorial fields a content editor can set,
+  which is the closer analogue to a component's argTypes than the module's own React props
+  (`documentId`, `draftMode`, plumbing rather than design-relevant options) — resolving inline
+  string-literal unions and one hop of type-alias indirection into the same `{ options, control }`
+  shape components already use.
+- **Component `argTypes` being `null` on 35 of 75 requested components turned out to mostly not be
+  a capture bug.** Checked against the actual stories files: 22 have no `argTypes` key in their
+  story `meta` at all (correctly `null`), 13 have `argTypes: {}` written explicitly (correctly
+  copied as `{}`, previously indistinguishable from `null` under a naive falsy check that treats an
+  empty object the same as a missing one). The skill's report now keeps `null`, `{}` and non-empty
+  as three separate counts.
+- **`discover-exports.mjs` joins `ds-web-snapshot`'s existing `scan-tokens.mjs`** as the second
+  script exception to "an agent runs the CodeGraph calls by hand" — both are mechanical,
+  judgement-free work (thousands of string matches; hundreds of export statements to follow) rather
+  than the kind of ambiguous-result judgement Step 2's collision handling needs. Verified against
+  the previous run's `requested` arrays: 74 of 75 components, 310 of 310 icons, 30 of 30 modules
+  resolved (the one component miss, `linkVariants`, was never a component — a `cva()`
+  style-variants export that had been mis-requested).
+
+Migrating: branch on the file's own `schemaVersion` (absent = pre-2.0.0). A pre-2.0.0 file's `items`
+only ever held requested names — read every one as implicitly `requestedByCaller: true` and treat
+`foundNotRequested` as not having been computed, rather than assuming it was empty. Past snapshots
+are not rewritten; re-run the skill for the discovery view.
+
 ## ds-web-snapshot captures token usage — 2026-08-18
 
 Not a contract change; `ds-figma-snapshot`'s output is untouched. `ds-web-snapshot` now writes a
