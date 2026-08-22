@@ -9,6 +9,7 @@
 #   4. building the dependency layer from raw captures must reproduce the fixture
 #   5. the ds-graph adapter must produce a graph the viewer can read
 #   6. the single-file bundle must round-trip a snapshot byte for byte
+#   7. any .skill bundle in dist/ must match the skill folder it was built from
 set -euo pipefail
 cd "$(dirname "$0")"
 VALIDATE="$PWD/../skills/ds-figma-snapshot/scripts/validate-snapshot.mjs"
@@ -20,7 +21,7 @@ MUTATE="$PWD/mutate.mjs"
 SNAP="ds-snapshots/2026-08-03"
 rm -rf .tmp
 
-echo "0/6 SKILL.md frontmatter must be within the platform's limits"
+echo "0/7 SKILL.md frontmatter must be within the platform's limits"
 # Uploading a skill fails outright when description is over 1024 characters, and the
 # error only shows up at upload time. Catch it here instead.
 node -e '
@@ -42,7 +43,7 @@ if (bad) process.exit(1);
 '
 
 echo
-echo "1/6 known-good fixture must pass"
+echo "1/7 known-good fixture must pass"
 node build-fixture.mjs ".tmp/good/$SNAP" >/dev/null
 node "$VALIDATE" ".tmp/good/$SNAP" | tail -2 | sed 's/^/  /'
 
@@ -85,7 +86,7 @@ says() {
 }
 
 echo
-echo "2/6 older and dependency-free snapshots must still pass"
+echo "2/7 older and dependency-free snapshots must still pass"
 
 # A 1.0.0 snapshot predates the dependency layer. Its schemaVersion is what keeps it
 # readable, so the 1.1.0-only checks must not fire on it.
@@ -118,7 +119,7 @@ console.log("  both space/md tokens present, the alias between them recorded, Pr
 '
 
 echo
-echo "3/6 each class of breakage must be rejected"
+echo "3/7 each class of breakage must be rejected"
 
 # Contract 2.0.0: a token path is its collection followed by its name, which is what
 # makes the path a complete identity. Each way of breaking that is its own case.
@@ -241,7 +242,7 @@ edit manifest.json 'd.dependencies.sources[0].componentsWalked=500'
 reject "more components walked than the inventory holds"
 
 echo
-echo "4/6 raw captures must build the same dependencies.json by hand or by script"
+echo "4/7 raw captures must build the same dependencies.json by hand or by script"
 # Proves the mapping rules in references/dependency-capture.md and the script agree,
 # and that a bridge envelope, an unwrapped result, two source files, and text style ids
 # in either raw Figma form all work.
@@ -260,7 +261,7 @@ console.log("  script output is byte-identical to the hand-written fixture");
 accept "a dependency layer built from raw captures by script"
 
 echo
-echo "5/6 the ds-graph adapter must produce a readable graph"
+echo "5/7 the ds-graph adapter must produce a readable graph"
 node "$TO_GRAPH" ".tmp/good/$SNAP" ".tmp/graph.json" >/dev/null
 node -e '
 const g = require("./.tmp/graph.json");
@@ -287,7 +288,7 @@ fi
 echo "  refused a snapshot with no dependency layer"
 
 echo
-echo "6/6 the single-file bundle must round-trip a snapshot byte for byte"
+echo "6/7 the single-file bundle must round-trip a snapshot byte for byte"
 # The bundle is only worth having if it is interchangeable with the folder, so the
 # test is equality of every file plus a clean validation of the unpacked copy.
 node "$TO_BUNDLE" ".tmp/good/$SNAP" ".tmp/bundle.json" >/dev/null
@@ -352,6 +353,52 @@ if node "$FROM_BUNDLE" ".tmp/bundle.json" ".tmp/good/$SNAP" >/dev/null 2>&1; the
   exit 1
 fi
 echo "  refused to unpack over a non-empty folder"
+
+echo
+echo "7/7 dist bundles must match the skills they were built from"
+# A .skill is a zip built by hand, so it goes stale silently: a skill gains a
+# script, nobody re-zips, and the gap only shows up on upload as a missing file.
+# dist/ is gitignored and a fresh clone has none, so an absent bundle is not a
+# failure — only one that exists and disagrees with its source.
+if [ ! -d ../dist ]; then
+  echo "  no dist/ — nothing built here yet, skipping"
+else
+  stale=0
+  built=0
+  for dir in ../skills/*/; do
+    skill=$(basename "$dir")
+    bundle="../dist/$skill.skill"
+    [ -f "$bundle" ] || continue
+    built=$((built + 1))
+    # Compare the file list, then every file's contents. A matching list with
+    # changed contents is the more likely drift of the two: SKILL.md gets edited
+    # far more often than a script gets added.
+    src=$(cd ../skills && find "$skill" -type f ! -name ".DS_Store" | sort)
+    bun=$(unzip -Z1 "$bundle" | grep -v '/$' | sort)
+    if [ "$src" != "$bun" ]; then
+      echo "  FAIL: $skill.skill holds different files from skills/$skill"
+      diff <(echo "$src") <(echo "$bun") | sed 's/^/    /' || true
+      stale=$((stale + 1))
+      continue
+    fi
+    rm -rf .tmp/dist-check
+    mkdir -p .tmp/dist-check
+    unzip -q "$bundle" -d .tmp/dist-check
+    if diff -r -q --exclude=.DS_Store "../skills/$skill" ".tmp/dist-check/$skill" >/dev/null; then
+      echo "  $skill.skill matches its source"
+    else
+      echo "  FAIL: $skill.skill was built from older sources"
+      diff -r -q --exclude=.DS_Store "../skills/$skill" ".tmp/dist-check/$skill" | sed 's/^/    /' || true
+      stale=$((stale + 1))
+    fi
+  done
+  if [ "$built" -eq 0 ]; then
+    echo "  dist/ holds no bundles yet, skipping"
+  elif [ "$stale" -gt 0 ]; then
+    echo "  rebuild with: cd skills && zip -rq -X ../dist/<skill>.skill <skill> -x '*.DS_Store'"
+    exit 1
+  fi
+fi
 
 rm -rf .tmp
 echo

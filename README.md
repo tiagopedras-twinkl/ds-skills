@@ -172,6 +172,45 @@ node skills/ds-design-md/scripts/validate-design-md.mjs DESIGN-example.md
 
 It is not a full YAML/Markdown parser — it checks frontmatter keys are present and non-empty, `components:` entries reference tokens rather than raw hex, the required body sections exist, and sections that are present appear in the spec's canonical order. Exits 0 with warnings allowed, 1 on a real structural error.
 
+## ds-parity-run
+
+Scores how closely the design system matches what is built, from the snapshots the
+other skills produce.
+
+Parity is a relationship between two things, never a property of either one, so
+everything is scored per surface pair — Figma against web, Figma against mobile,
+and web against mobile. The third pair earns its place: if Figma calls a size `L`,
+web calls it `lg` and mobile calls it `large`, all three disagree while each is
+separately defensible, and only that pair notices.
+
+Five checks per pair — does it exist, is it named the same, does every design
+option have a code equivalent, are those options named the same, and does it look
+the same. Only the first gates the rest, because you cannot compare a thing that
+is not there. The five are always published separately: a strong existence score
+hiding a weak options score is exactly the reading a single blended percentage
+invites.
+
+Matching happens option by option rather than choice-set by choice-set. Figma's
+`State` set and the code's separate `disabled` / `selected` / `error` flags
+describe the same thing at different granularities, so insisting the sets line up
+first threw away answers that were already there.
+
+Output is `ds-inventory/parity/runs/<date>/` — `parity.json` for the inspector,
+`findings.md` for a person. The contract that defines every value is
+`ds-inventory/parity/CONTRACT.md`, and the rules and declared exceptions are
+`ds-inventory/parity/rules.yaml`, which is hand-owned and which no tool writes.
+
+The scorer and its validator ship with this skill, in `scripts/`. Only the
+contract, the rules and the runs live in `ds-inventory` — everything a person
+decided stays with the data it describes, and the machinery that applies those
+decisions travels with the skill, so improving the matching is one edit in one
+place rather than an edit to a repo of data.
+
+### Requirements
+
+Three snapshots on disk: Figma, web and app. Run from `ds-inventory`, which is
+where the contract, the rules, the records and the output all live.
+
 ## Changing the contract
 
 The contract is versioned. Change it deliberately:
