@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scan-tokens.mjs — code-side design token usage for ds-web-snapshot.
+ * scan-tokens.mjs — code-side design token usage for ds-snapshot-web.
  *
  * CodeGraph indexes symbols, and a design token is not a symbol: it is a CSS
  * custom property that Tailwind turns into utility class names. So token usage

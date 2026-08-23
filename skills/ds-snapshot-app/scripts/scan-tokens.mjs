@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * scan-tokens.mjs — code-side design token usage for ds-app-snapshot (mobile).
+ * scan-tokens.mjs — code-side design token usage for ds-snapshot-app (mobile).
  *
  * A design token isn't a code symbol here either, same reasoning as
- * ds-web-snapshot's scan-tokens.mjs: CodeGraph indexes function/component
+ * ds-snapshot-web's scan-tokens.mjs: CodeGraph indexes function/component
  * definitions, and a token is a CSS custom property (NativeWind side) or a
  * plain object literal key (JS side). Neither shows up as something
  * `codegraph query` can find, so usage is measured by a text scan instead.
@@ -28,9 +28,9 @@
  *                        [--package @twinkltech/mobile-design-system]
  *                        [--out <dir>] [--requested "background-brand,spacing-200"]
  */
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve } from "node:path";
+import { join, resolve, dirname } from "node:path";
 import { createRequire } from "node:module";
 
 const args = process.argv.slice(2);

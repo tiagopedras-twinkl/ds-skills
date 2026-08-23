@@ -1,6 +1,6 @@
 ---
-name: ds-app-snapshot
-description: Look up real usage data for a list of Twinkl design-system components, icons, or design tokens in the mobile app (twinkl-family-mobileapp), using CodeGraph, and write it to a dated snapshot in ds-snapshots/app_snapshots/. This is the mobile counterpart to ds-web-snapshot — same intent (real usage counts from the actual codebase, not Figma), different mechanics because the design system here is a published npm package (@twinkltech/mobile-design-system) styled with NativeWind, not local CSS. Use whenever the user gives a list of component/icon/token names and asks for mobile usage counts or adoption data. Requires CodeGraph indexed in the session's current working directory (twinkl-family-mobileapp); this skill checks for it and initializes it if missing.
+name: ds-snapshot-app
+description: Look up real usage data for a list of Twinkl design-system components, icons, or design tokens in the mobile app (twinkl-family-mobileapp), using CodeGraph, and write it to a dated snapshot in ds-inventory/snapshots/app/. This is the mobile counterpart to ds-snapshot-web — same intent (real usage counts from the actual codebase, not Figma), different mechanics because the design system here is a published npm package (@twinkltech/mobile-design-system) styled with NativeWind, not local CSS. Use whenever the user gives a list of component/icon/token names and asks for mobile usage counts or adoption data. Requires CodeGraph indexed in the session's current working directory (twinkl-family-mobileapp); this skill checks for it and initializes it if missing.
 ---
 
 # App usage snapshot
@@ -9,10 +9,10 @@ Turn a list of names into real usage counts pulled from
 `twinkl-family-mobileapp`, via
 [CodeGraph](https://www.npmjs.com/package/@colbymchenry/codegraph), and write
 it as a dated snapshot so it can be compared run over run. This is the mobile
-counterpart to `ds-web-snapshot` — same question ("what does the code actually
+counterpart to `ds-snapshot-web` — same question ("what does the code actually
 use?"), answered against a different codebase with a different styling model.
 
-**Read `ds-web-snapshot` first if you haven't.** This skill only documents
+**Read `ds-snapshot-web` first if you haven't.** This skill only documents
 where mobile diverges from it; steps that are identical are referenced, not
 repeated.
 
@@ -34,7 +34,7 @@ see their own sections.
 
 ## Non-negotiables
 
-Same five as `ds-web-snapshot`, restated for this repo:
+Same five as `ds-snapshot-web`, restated for this repo:
 
 1. **CodeGraph is the source for components** — no `grep`, no manual `find`.
    **Icons and tokens are exceptions**, for the same reason as web's tokens:
@@ -56,7 +56,7 @@ Same five as `ds-web-snapshot`, restated for this repo:
 ## Preconditions: is CodeGraph available here?
 
 Run in the session's current working directory — this must be
-`twinkl-family-mobileapp`, not `ds-skills` or `ds-snapshots`. Unlike web,
+`twinkl-family-mobileapp`, not `ds-skills` or `ds-inventory`. Unlike web,
 CodeGraph is **not** an existing devDependency or documented convention in
 this repo, so there's nothing to check for beforehand — just run it:
 
@@ -110,7 +110,7 @@ A name with zero matches anywhere goes in `components.json`'s `notFound`.
 
 ## Step 2 — name collisions
 
-Identical procedure to `ds-web-snapshot` — check the raw Step 1 results for
+Identical procedure to `ds-snapshot-web` — check the raw Step 1 results for
 the same exact name in more than one file before trusting `callers`; fall
 back to `explore`, then `node --file` for any collision `explore`'s "Blast
 radius" omits. Confirmed live on this repo: `Avatar` collides
@@ -160,7 +160,7 @@ Target folder, always this exact absolute path regardless of the session's
 working directory — mirrors `web_snapshots` in the tools/data split:
 
 ```
-/Users/tiagopedras/Code/ds-snapshots/app_snapshots/<YYYY-MM-DD>/
+/Users/tiagopedras/Code/ds-inventory/snapshots/app/<YYYY-MM-DD>/
 ```
 
 **Never overwrite** — `<YYYY-MM-DD>-2`, then `-3`, first free number, same
@@ -220,9 +220,9 @@ So icon usage is measured by a text scan, the direct mobile equivalent of why
 web's tokens get one:
 
 ```bash
-node <ds-skills>/skills/ds-app-snapshot/scripts/scan-icons.mjs \
+node <ds-skills>/skills/ds-snapshot-app/scripts/scan-icons.mjs \
   --repo /Users/tiagopedras/Code/twinkl-family-mobileapp \
-  --out  /Users/tiagopedras/Code/ds-snapshots/app_snapshots/<YYYY-MM-DD>
+  --out  /Users/tiagopedras/Code/ds-inventory/snapshots/app/<YYYY-MM-DD>
 ```
 
 Optional: `--barrel <path>` if the icon barrel moves, `--requested "Name,Name"`
@@ -263,9 +263,9 @@ switching the way `scheme(edsLight.x, edsDark.x)` does. A token counts if
 *either* form is used — neither is more "real" than the other here.
 
 ```bash
-node <ds-skills>/skills/ds-app-snapshot/scripts/scan-tokens.mjs \
+node <ds-skills>/skills/ds-snapshot-app/scripts/scan-tokens.mjs \
   --repo /Users/tiagopedras/Code/twinkl-family-mobileapp \
-  --out  /Users/tiagopedras/Code/ds-snapshots/app_snapshots/<YYYY-MM-DD>
+  --out  /Users/tiagopedras/Code/ds-inventory/snapshots/app/<YYYY-MM-DD>
 ```
 
 Optional: `--package <name>` if the DS package is ever renamed (default
@@ -356,7 +356,7 @@ over-trusted.
 
 ## Why almost no script
 
-Same division of labour as `ds-web-snapshot`: Steps 1–4 are direct CodeGraph
+Same division of labour as `ds-snapshot-web`: Steps 1–4 are direct CodeGraph
 CLI calls needing judgement (especially Step 2's collisions), read and
 interpreted by the agent. `scan-icons.mjs` and `scan-tokens.mjs` are the
 exceptions because both are exhaustive exact-match counting jobs with no

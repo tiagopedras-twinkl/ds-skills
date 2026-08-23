@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scan-icons.mjs — code-side icon usage for ds-app-snapshot.
+ * scan-icons.mjs — code-side icon usage for ds-snapshot-app.
  *
  * Mobile icons are SVG assets re-exported through a barrel file
  * (src/components/icons/index.ts). CodeGraph indexes function/class/component
@@ -8,7 +8,7 @@
  * `codegraph query`/`callers` only ever finds the import site, never a real
  * definition, and `callers` comes back empty even for icons used dozens of
  * times. So icon usage is measured here by a text scan instead, the same way
- * ds-web-snapshot's scan-tokens.mjs measures CSS custom properties that
+ * ds-snapshot-web's scan-tokens.mjs measures CSS custom properties that
  * CodeGraph can't see either. Every entry carries `"method": "text-scan"`.
  *
  * Usage:

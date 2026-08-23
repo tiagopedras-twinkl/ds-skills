@@ -81,7 +81,7 @@ if (!tokenByLabel.size) {
     "no token in tokens.json carries a figmaCollection extension.\n" +
       "That arrived with contract 2.0.0, and without it a capture label cannot be matched onto a token:\n" +
       "both a collection name and a variable name may contain '/', so the label cannot be split apart.\n" +
-      "Re-run the inventory steps of ds-figma-snapshot to produce a 2.0.0 snapshot, then build the layer against that."
+      "Re-run the inventory steps of ds-snapshot-figma to produce a 2.0.0 snapshot, then build the layer against that."
   );
 }
 

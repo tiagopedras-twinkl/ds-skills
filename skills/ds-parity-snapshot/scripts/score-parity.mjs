@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Scores design/code parity per pair, per check, against the contract in
-// ds-inventory/parity/CONTRACT.md. Ships with the ds-parity-run skill rather
+// ds-inventory/rules/parity-contract.md. Ships with the ds-parity-snapshot skill rather
 // than with the data it reads: the contract, the rules and the runs are
 // ds-inventory's, the machinery that applies them is the skill's. Every path it
 // touches arrives as an argument, so it never assumes where it was installed.
@@ -12,8 +12,14 @@
 // is matched against the whole pool of code settings and their values instead.
 //
 // Usage, run from ds-inventory:
-//   node <ds-skills>/skills/ds-parity-run/scripts/score-parity.mjs \
-//     <figma-dir> <web-dir> <app-dir> <records-dir> <rules-file> <out-dir> [id ...]
+//   node <ds-skills>/skills/ds-parity-snapshot/scripts/score-parity.mjs \
+//     <figma-dir> <web-dir> <app-dir> <records-dir> <rules-file> <out-dir> \
+//     [--mirror <second-out-dir>] [id ...]
+//
+// --mirror writes an identical second copy of parity.json, rules-used.yaml and
+// findings.md to another folder — used to land the same run in snapshots/parity
+// alongside the ds-inventory copy that stays the source of truth. It is a copy,
+// not a second computation: both files come from one score, one rules read.
 
 import { readFileSync, writeFileSync, readdirSync, mkdirSync } from "node:fs";
 import { join, basename } from "node:path";
@@ -31,11 +37,18 @@ const WEIGHTS = { exists: 0.35, complete: 0.3, looksRight: 0.2, consistent: 0.1,
 const ACTIVE_WEIGHT_SUM = ACTIVE_CHECKS.reduce((sum, c) => sum + WEIGHTS[c], 0);
 const HEADLINE_WEIGHTS = Object.fromEntries(ACTIVE_CHECKS.map((c) => [c, WEIGHTS[c] / ACTIVE_WEIGHT_SUM]));
 
-const [, , figmaDir, webDir, appDir, recordsDir, rulesFile, outDir, ...onlyIds] = process.argv;
+const [, , figmaDir, webDir, appDir, recordsDir, rulesFile, outDir, ...rest] = process.argv;
 if (!figmaDir || !webDir || !appDir || !recordsDir || !rulesFile || !outDir) {
-  console.error("Usage: node score-parity.mjs <figma-dir> <web-dir> <app-dir> <records-dir> <rules-file> <out-dir> [id ...]");
+  console.error("Usage: node score-parity.mjs <figma-dir> <web-dir> <app-dir> <records-dir> <rules-file> <out-dir> [--mirror <dir>] [id ...]");
   process.exit(1);
 }
+const mirrorAt = rest.indexOf("--mirror");
+const mirrorDir = mirrorAt === -1 ? null : rest[mirrorAt + 1];
+if (mirrorAt !== -1 && !mirrorDir) {
+  console.error("--mirror needs a folder after it");
+  process.exit(1);
+}
+const onlyIds = mirrorAt === -1 ? rest : [...rest.slice(0, mirrorAt), ...rest.slice(mirrorAt + 2)];
 
 // ── sources ─────────────────────────────────────────────────────────────────
 const figmaComponents = JSON.parse(readFileSync(join(figmaDir, "components.json"), "utf8")).components;
@@ -412,6 +425,18 @@ for (const code of [...order, ...[...grouped.keys()].filter((k) => !order.includ
 }
 writeFileSync(join(outDir, "findings.md"), md);
 
+// ── mirror ──────────────────────────────────────────────────────────────────
+// Same three files, byte for byte, in a second folder. ds-inventory/generated/parity/
+// stays the copy a record's parityExpected and the inspector read; the mirror in
+// snapshots/parity exists so a run is findable next to the captures it was scored
+// from, without becoming a second thing anyone computes or trusts separately.
+if (mirrorDir) {
+  mkdirSync(mirrorDir, { recursive: true });
+  writeFileSync(join(mirrorDir, "parity.json"), JSON.stringify(out, null, 2) + "\n");
+  writeFileSync(join(mirrorDir, "rules-used.yaml"), rulesText);
+  writeFileSync(join(mirrorDir, "findings.md"), md);
+}
+
 // ── readable summary ────────────────────────────────────────────────────────
 const pad = (s, n) => String(s).padEnd(n);
 console.log(`\nparity contract ${CONTRACT_VERSION} — ${scored.length} record(s)`);
@@ -440,3 +465,4 @@ for (const pair of PAIRS) {
   }
 }
 console.log(`\nwritten ${join(outDir, "parity.json")} and findings.md`);
+if (mirrorDir) console.log(`mirrored to ${mirrorDir}`);

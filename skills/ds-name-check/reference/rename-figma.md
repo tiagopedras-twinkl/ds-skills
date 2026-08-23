@@ -69,7 +69,7 @@ record of what happened, so report from it and not from the input list.
 
 1. Re-run the audit against live Figma.
 2. Report: renamed, skipped and why, still failing.
-3. If a `ds-figma-snapshot` exists for this library it is now stale on names. Say so.
+3. If a `ds-snapshot-figma` exists for this library it is now stale on names. Say so.
    Do not refresh it silently, that is the other skill's job and the user's call.
 
 ## What not to do

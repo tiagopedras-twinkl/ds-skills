@@ -5,7 +5,7 @@ Every snapshot has exactly this layout. No extra files, no missing files.
 The folder name is today's date. A second capture on the same date takes a number — `2026-08-15-2`, then `-3` — because an existing snapshot is never overwritten. A branch capture may carry a word instead, as `2026-08-08-main` does. Everything downstream matches on the leading date and treats the rest as a label.
 
 ```
-figma_snapshots/<YYYY-MM-DD>[-<n>]/
+snapshots/figma/<YYYY-MM-DD>[-<n>]/
 ├── manifest.json                        what this snapshot is
 ├── tokens.json                          DTCG 2025.10, default mode of every collection, merged
 ├── tokens/

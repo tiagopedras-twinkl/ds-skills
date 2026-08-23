@@ -1,6 +1,6 @@
 ---
 name: ds-design-md
-description: Write a new DESIGN-<name>.md — a design-token YAML frontmatter plus an eleven-section prose write-up of a product or brand's visual system (colours, typography, spacing, radii, elevation, components, all token-referenced) — from an existing codebase, a brand guidelines deck, or a Figma design system library (one file or several). Use whenever the user asks to write, generate, produce, reverse-engineer, or document a DESIGN.md, a design system analysis, a brand write-up, or a design-token spec for a product — their own or a competitor's. Also use to refresh or extend an existing DESIGN-*.md against a newer or additional source. Do NOT use for ds-docs component usage guidance (that's ds-component-docs) or for a raw Figma token/component export with no prose (that's ds-figma-snapshot, which this skill consumes as one of its Figma sources rather than duplicating).
+description: Write a new DESIGN-<name>.md — a design-token YAML frontmatter plus an eleven-section prose write-up of a product or brand's visual system (colours, typography, spacing, radii, elevation, components, all token-referenced) — from an existing codebase, a brand guidelines deck, or a Figma design system library (one file or several). Use whenever the user asks to write, generate, produce, reverse-engineer, or document a DESIGN.md, a design system analysis, a brand write-up, or a design-token spec for a product — their own or a competitor's. Also use to refresh or extend an existing DESIGN-*.md against a newer or additional source. Do NOT use for ds-docs component usage guidance (that's ds-component-docs) or for a raw Figma token/component export with no prose (that's ds-snapshot-figma, which this skill consumes as one of its Figma sources rather than duplicating).
 ---
 
 # Design.md writer
@@ -123,7 +123,7 @@ re-ask it.
   patterns, accessibility guidance written against GOV.UK/APG/WCAG. That's
   `ds-component-docs`, a different format for a different audience.
 - **Raw Figma export with no prose** — a `tokens.json`/`components.json`
-  snapshot with no interpretation. That's `ds-figma-snapshot`, and this skill reads
+  snapshot with no interpretation. That's `ds-snapshot-figma`, and this skill reads
   its output rather than re-implementing it.
 - **Component naming validation.** That's `ds-name-check`.
 - **Deciding which source wins on a genuine disagreement without telling the
@@ -140,7 +140,7 @@ re-ask it.
 - `reference/source-deck.md` — what a brand guidelines deck reliably states
   versus what it never does, and how to keep a deck-sourced file honestly
   thin rather than padded.
-- `reference/source-figma.md` — using a `ds-figma-snapshot` (or reading Figma live)
+- `reference/source-figma.md` — using a `ds-snapshot-figma` (or reading Figma live)
   for exact tokens, plus screenshots of real frames for how those tokens
   actually compose — a token map alone doesn't ground the prose.
 - `scripts/validate-design-md.mjs` — the structural gate. Node, no
@@ -150,7 +150,7 @@ re-ask it.
 ## Changing the format
 
 `reference/format-spec.md` is versioned by convention, not a `schemaVersion`
-field the way `ds-figma-snapshot`'s contract is — DESIGN.md files describe products,
+field the way `ds-snapshot-figma`'s contract is — DESIGN.md files describe products,
 not a shared machine contract other tools join on. Still, change it
 deliberately: if a new section or field earns its place across more than one
 real file, add it to the spec and to `validate-design-md.mjs` in the same

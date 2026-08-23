@@ -1,14 +1,19 @@
 ---
-name: ds-parity-run
+name: ds-parity-snapshot
 description: Score how closely the Twinkl design system matches what is built, by comparing a Figma snapshot against the web and mobile code snapshots — per surface pair, across five checks — and write a dated parity run plus a readable findings list. Use whenever the user asks to score or refresh parity, asks how aligned design and code are, asks what is missing in code or missing in Figma, asks which components or options have drifted, asks for a parity report, or says the parity numbers are stale. Also use before any claim about design/code alignment, since the score is only trustworthy against snapshots that exist and are dated. Requires three snapshots on disk — Figma, web and app — and must be run from ds-inventory.
 ---
 
 # Run a parity score
 
 Compare a Figma snapshot against the web and mobile code snapshots and write a
-dated parity run into `ds-inventory/parity/runs/<YYYY-MM-DD>/`.
+dated parity run into `ds-inventory/generated/parity/<YYYY-MM-DD>/`, mirrored
+byte-for-byte into `ds-inventory/snapshots/parity/<YYYY-MM-DD>/` so the run is
+findable next to the captures it was scored from. `ds-inventory` stays the copy
+that matters — the one the inspector reads and the one a record's
+`parityExpected` is judged against; the mirror is a convenience copy, not a
+second computation.
 
-**Read `ds-inventory/parity/CONTRACT.md` before doing anything else.** It defines
+**Read `ds-inventory/rules/parity-contract.md` before doing anything else.** It defines
 the three pairs, the five checks, the four outcome values, and every reason code.
 Nothing in this skill re-explains it, and reporting a number without knowing which
 of `n/a` and `unmeasurable` it came from is how a parity claim becomes wrong.
@@ -26,9 +31,9 @@ capture is worse than no run at all.
 
 | Side | Where | If it is missing or stale |
 |---|---|---|
-| Figma | `ds-snapshots/figma_snapshots/<date>/components.json` | `ds-figma-snapshot` |
-| Web | `ds-snapshots/web_snapshots/<date>/components.json` | `ds-web-snapshot`, run from `twinkl-web` |
-| Mobile | `ds-snapshots/app_snapshots/<date>/components.json` | `ds-app-snapshot`, run from `twinkl-family-mobileapp` |
+| Figma | `ds-inventory/snapshots/figma/<date>/components.json` | `ds-snapshot-figma` |
+| Web | `ds-inventory/snapshots/web/<date>/components.json` | `ds-snapshot-web`, run from `twinkl-web` |
+| Mobile | `ds-inventory/snapshots/app/<date>/components.json` | `ds-snapshot-app`, run from `twinkl-family-mobileapp` |
 
 If any one is more than a couple of weeks older than the others, stop and tell the
 user which one is behind and what it means for the result. Do not refresh a
@@ -47,11 +52,12 @@ knows where it was installed: every path it touches arrives as an argument.
 1. **Score.** From `ds-inventory`:
 
    ```
-   node <ds-skills>/skills/ds-parity-run/scripts/score-parity.mjs \
-     ../ds-snapshots/figma_snapshots/<date> \
-     ../ds-snapshots/web_snapshots/<date> \
-     ../ds-snapshots/app_snapshots/<date> \
-     records parity/rules.yaml parity/runs/<today>
+   node <ds-skills>/skills/ds-parity-snapshot/scripts/score-parity.mjs \
+     ../ds-inventory/snapshots/figma/<date> \
+     ../ds-inventory/snapshots/web/<date> \
+     ../ds-inventory/snapshots/app/<date> \
+     generated/records decisions/parity-rules.yaml generated/parity/<today> \
+     --mirror ../ds-inventory/snapshots/parity/<today>
    ```
 
    `<ds-skills>` is wherever this skill is installed — `~/Code/ds-skills` on
@@ -66,8 +72,8 @@ knows where it was installed: every path it touches arrives as an argument.
 2. **Validate.**
 
    ```
-   node <ds-skills>/skills/ds-parity-run/scripts/validate-parity.mjs \
-     parity/runs/<today> parity/rules.yaml records
+   node <ds-skills>/skills/ds-parity-snapshot/scripts/validate-parity.mjs \
+     generated/parity/<today> decisions/parity-rules.yaml generated/records
    ```
 
 
@@ -90,11 +96,11 @@ knows where it was installed: every path it touches arrives as an argument.
 4. **Propose rules, never invent them.** Where an option matched nothing, work out
    whether it is a genuine gap or a naming difference nobody has written down —
    this is the part the script cannot do and you can. Then **propose** entries for
-   `parity/rules.yaml` and let the user approve them. Every rule you add changes
+   `decisions/parity-rules.yaml` and let the user approve them. Every rule you add changes
    the score, so a rule slipped in without being named is a score nobody can
    trust. Mark anything you add with the date and a one-line reason.
 
-5. **Report.** Lead with what changed since the last run in `parity/runs/`, then
+5. **Report.** Lead with what changed since the last run in `generated/parity/`, then
    the findings worth acting on. Say which snapshot dates the numbers came from,
    every time. Write the prose version into `ds-audit/reports/<date> - parity.md`,
    which is where every other audit in this system lands.

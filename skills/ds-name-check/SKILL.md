@@ -1,6 +1,6 @@
 ---
 name: ds-name-check
-description: Validate component names against the design system naming specification and suggest a corrected name for every failure. Use whenever the user asks whether a name is valid, to check, audit, lint, or review component names, whether something follows the naming convention or spec, or to find badly named components. Works on a name pasted in chat, a list, a CSV or JSON file, a code or Storybook export, a ds-figma-snapshot component inventory, or the live Figma library via the Figma Console MCP bridge. Also use when the user asks what the naming rules are, or asks to fix or rename components to match the convention — renaming is a separate confirmed step after the report.
+description: Validate component names against the design system naming specification and suggest a corrected name for every failure. Use whenever the user asks whether a name is valid, to check, audit, lint, or review component names, whether something follows the naming convention or spec, or to find badly named components. Works on a name pasted in chat, a list, a CSV or JSON file, a code or Storybook export, a ds-snapshot-figma component inventory, or the live Figma library via the Figma Console MCP bridge. Also use when the user asks what the naming rules are, or asks to fix or rename components to match the convention — renaming is a separate confirmed step after the report.
 ---
 
 # Component name check
@@ -61,15 +61,15 @@ node scripts/validate-names.mjs --json components.json
 
 ### Snapshot (prefer this for Figma)
 
-A `ds-figma-snapshot` component inventory. Needs no Figma session and is the default
+A `ds-snapshot-figma` component inventory. Needs no Figma session and is the default
 path for auditing the library.
 
 ```bash
-node scripts/validate-names.mjs --snapshot ds-snapshots/figma_snapshots/<YYYY-MM-DD>
+node scripts/validate-names.mjs --snapshot ds-inventory/snapshots/figma/<YYYY-MM-DD>
 ```
 
 The adapter rejoins `path` and `name` into the full Figma name, because the spec
-applies to the whole name and ds-figma-snapshot stores the last segment separately. It
+applies to the whole name and ds-snapshot-figma stores the last segment separately. It
 carries `nodeId` and `source` through, so the JSON output is directly usable for
 a rename pass.
 
@@ -86,7 +86,7 @@ Confirm the paired file with `figma_list_open_files`. Read the inventory with
 `figma_get_design_system_kit`, write the names to a JSON array, and run
 `--json`. Do not hand-check them.
 
-If the user wants this repeatedly, tell them to run `ds-figma-snapshot` once instead.
+If the user wants this repeatedly, tell them to run `ds-snapshot-figma` once instead.
 
 ## Output
 

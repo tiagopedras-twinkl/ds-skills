@@ -11,7 +11,7 @@
  *
  * Input (pick one, defaults to stdin):
  *   (stdin)                    one name per line
- *   --snapshot <path>          ds-figma-snapshot dir or components.json
+ *   --snapshot <path>          ds-snapshot-figma dir or components.json
  *   --json <path>              JSON array of strings, or of objects with a name field
  *   --names "A,B,C"            comma-separated names
  *
@@ -227,10 +227,10 @@ function readSnapshot(path) {
     fail(`cannot parse ${file}: ${e.message}`);
   }
   if (!Array.isArray(data.components)) {
-    fail(`${file} has no components array — is it a ds-figma-snapshot components.json?`);
+    fail(`${file} has no components array — is it a ds-snapshot-figma components.json?`);
   }
 
-  // ds-figma-snapshot splits the Figma name: path holds the leading segments, name
+  // ds-snapshot-figma splits the Figma name: path holds the leading segments, name
   // holds the last one. The spec applies to the full name, so rejoin them.
   return data.components.map((c) => ({
     name: [...(c.path || []), c.name].join("/"),

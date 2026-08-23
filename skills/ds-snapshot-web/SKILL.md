@@ -1,6 +1,6 @@
 ---
-name: ds-web-snapshot
-description: Discover every Twinkl design-system component, CMS module and icon that actually exists in a codebase, plus real usage counts for each, using CodeGraph, and write it to a dated snapshot in ds-snapshots/web_snapshots/. Use whenever the user wants a code-side usage snapshot, adoption data, or to check the code's own component/module/icon inventory — as opposed to Figma-side data, which is ds-figma-snapshot. A list of names is optional context, not a requirement — the skill discovers the full set from the code's own export surface either way, so anything built in code and absent from Figma still shows up. Also captures design token usage — which colour, spacing, radius and shadow tokens the code actually references, and which are declared but dead. Requires CodeGraph indexed in the session's current working directory (the code repo, e.g. twinkl-web); this skill checks for it and initializes it if missing.
+name: ds-snapshot-web
+description: Discover every Twinkl design-system component, CMS module and icon that actually exists in a codebase, plus real usage counts for each, using CodeGraph, and write it to a dated snapshot in ds-inventory/snapshots/web/. Use whenever the user wants a code-side usage snapshot, adoption data, or to check the code's own component/module/icon inventory — as opposed to Figma-side data, which is ds-snapshot-figma. A list of names is optional context, not a requirement — the skill discovers the full set from the code's own export surface either way, so anything built in code and absent from Figma still shows up. Also captures design token usage — which colour, spacing, radius and shadow tokens the code actually references, and which are declared but dead. Requires CodeGraph indexed in the session's current working directory (the code repo, e.g. twinkl-web); this skill checks for it and initializes it if missing.
 ---
 
 # Web usage snapshot
@@ -9,7 +9,7 @@ Answer what the codebase actually has and how much each thing is used, pulled
 from the code itself via
 [CodeGraph](https://www.npmjs.com/package/@colbymchenry/codegraph), and write it
 as a dated snapshot so it can be compared run over run. This is the code-side
-counterpart to `ds-figma-snapshot` — that skill answers what the Figma library
+counterpart to `ds-snapshot-figma` — that skill answers what the Figma library
 contains, this one answers what the code actually has and uses.
 
 **A snapshot is a mirror of the code, not a lookup against a list.** Every run
@@ -20,7 +20,7 @@ were the ones asked about, and which asked-about names don't exist in code at
 all. A component built in code and never added to Figma has to show up here
 regardless, or the snapshot is answering "what does Figma think exists"
 instead of "what does the code have" — which is the one thing this skill is
-for that `ds-figma-snapshot` cannot answer.
+for that `ds-snapshot-figma` cannot answer.
 
 ## Non-negotiables
 
@@ -56,7 +56,7 @@ for that `ds-figma-snapshot` cannot answer.
    components can share a name (see "Name collisions"). A count that silently
    merges two different components is wrong, not approximate — treat it as a
    bug, not a rounding error.
-5. **Never overwrite a snapshot.** Same rule as `ds-figma-snapshot`: a same-day
+5. **Never overwrite a snapshot.** Same rule as `ds-snapshot-figma`: a same-day
    rerun gets `-2`, then `-3` — first free number.
 6. **A name always ends up somewhere.** Every name this run touches — whether
    discovered in code, supplied by a caller, or both — is either an entry in
@@ -66,7 +66,7 @@ for that `ds-figma-snapshot` cannot answer.
 ## Preconditions: is CodeGraph available here?
 
 Run in the session's current working directory — this must be the code repo
-(e.g. `twinkl-web`), not `ds-skills` or `ds-snapshots`:
+(e.g. `twinkl-web`), not `ds-skills` or `ds-inventory`:
 
 ```bash
 pnpm exec codegraph status
@@ -111,9 +111,9 @@ Before anything is looked up individually, get the code's own list of what
 exists:
 
 ```bash
-node <ds-skills>/skills/ds-web-snapshot/scripts/discover-exports.mjs \
+node <ds-skills>/skills/ds-snapshot-web/scripts/discover-exports.mjs \
   --repo <path-to-code-repo> \
-  --out  /Users/tiagopedras/Code/ds-snapshots/web_snapshots/<YYYY-MM-DD>
+  --out  /Users/tiagopedras/Code/ds-inventory/snapshots/web/<YYYY-MM-DD>
 ```
 
 This walks the real export graph — starting at each tree's top barrel file(s)
@@ -331,7 +331,7 @@ working directory — the code lives in the product repo, the data lives here,
 per the tools/data split in the root `CLAUDE.md`:
 
 ```
-/Users/tiagopedras/Code/ds-snapshots/web_snapshots/<YYYY-MM-DD>/
+/Users/tiagopedras/Code/ds-inventory/snapshots/web/<YYYY-MM-DD>/
 ```
 
 **Never overwrite.** If `<YYYY-MM-DD>/` already exists, use `<YYYY-MM-DD>-2`,
@@ -401,7 +401,7 @@ itself, so never skip writing one because it happens to be empty.
 
 A pre-2.0.0 `components.json`/`modules.json`/`icons.json` has no
 `schemaVersion` field at all — that absence is itself the version marker, the
-same convention `ds-figma-snapshot` uses. Its `items` only ever held
+same convention `ds-snapshot-figma` uses. Its `items` only ever held
 caller-requested names (discovery didn't exist yet), so there is no
 `foundNotRequested` group and no `requestedByCaller` flag to read — treat every
 item in an unversioned file as implicitly requested. Don't backfill these
@@ -419,9 +419,9 @@ mechanical (thousands of matches across thousands of files) and has none of
 the judgement Step 2 needs.
 
 ```bash
-node <ds-skills>/skills/ds-web-snapshot/scripts/scan-tokens.mjs \
+node <ds-skills>/skills/ds-snapshot-web/scripts/scan-tokens.mjs \
   --repo /Users/tiagopedras/Code/twinkl-web \
-  --out  /Users/tiagopedras/Code/ds-snapshots/web_snapshots/<YYYY-MM-DD>
+  --out  /Users/tiagopedras/Code/ds-inventory/snapshots/web/<YYYY-MM-DD>
 ```
 
 Optional flags: `--themes <dir>` if the theme CSS doesn't live at `ui/themes`,
@@ -539,5 +539,5 @@ components, 310 of 310 icons, and 30 of 30 modules resolved — the one miss,
 export that had been mis-requested.
 
 If the component contract needs machine validation later (mirroring
-`ds-figma-snapshot`'s validator), add that deliberately rather than
+`ds-snapshot-figma`'s validator), add that deliberately rather than
 half-building one now.

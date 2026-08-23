@@ -12,11 +12,11 @@
 #   7. any .skill bundle in dist/ must match the skill folder it was built from
 set -euo pipefail
 cd "$(dirname "$0")"
-VALIDATE="$PWD/../skills/ds-figma-snapshot/scripts/validate-snapshot.mjs"
-TO_GRAPH="$PWD/../skills/ds-figma-snapshot/scripts/to-ds-graph.mjs"
-TO_BUNDLE="$PWD/../skills/ds-figma-snapshot/scripts/to-bundle.mjs"
-FROM_BUNDLE="$PWD/../skills/ds-figma-snapshot/scripts/from-bundle.mjs"
-BUILD_DEPS="$PWD/../skills/ds-figma-snapshot/scripts/build-dependencies.mjs"
+VALIDATE="$PWD/../skills/ds-snapshot-figma/scripts/validate-snapshot.mjs"
+TO_GRAPH="$PWD/../skills/ds-snapshot-figma/scripts/to-ds-graph.mjs"
+TO_BUNDLE="$PWD/../skills/ds-snapshot-figma/scripts/to-bundle.mjs"
+FROM_BUNDLE="$PWD/../skills/ds-snapshot-figma/scripts/from-bundle.mjs"
+BUILD_DEPS="$PWD/../skills/ds-snapshot-figma/scripts/build-dependencies.mjs"
 MUTATE="$PWD/mutate.mjs"
 SNAP="ds-snapshots/2026-08-03"
 rm -rf .tmp

@@ -1,11 +1,11 @@
 ---
-name: ds-figma-snapshot
+name: ds-snapshot-figma
 description: Export the Figma design system library (variables, typography styles, component inventory) into a dated, fixed-format snapshot on disk, optionally with the dependency layer — which components bind which tokens, which tokens alias which per mode, which components nest which. Use whenever the user asks to snapshot, export, refresh, extract, or audit design system data from Figma, mentions tokens, variables, text styles, a component inventory, design/code parity, or says a snapshot is stale. Also use it when they ask what depends on what, what breaks if a token or component changes, for an impact analysis or dependency graph, or to refresh a ds-graph snapshot — all of which need the dependency layer. Also use it before comparing Figma against code, which is only trustworthy against a validated snapshot. Requires Figma desktop open on the library with the Figma Console MCP bridge paired, on every file to be walked.
 ---
 
 # Design system snapshot
 
-Export the Figma design system library into `figma_snapshots/<YYYY-MM-DD>/`, under the user's current working directory, as a fixed set of JSON files.
+Export the Figma design system library into `ds-inventory/snapshots/figma/<YYYY-MM-DD>/` as a fixed set of JSON files.
 
 The point of this skill is the contract, not the export. Downstream consumers (parity audits, docs, diffs between dates, code generation, impact analysis) all read the same field names in the same places, so the snapshot format must be identical every run regardless of what Figma returns. Variables and typography use the Design Tokens Community Group format 2025.10, which is a real interoperable standard. Component inventory and the dependency layer use local schemas, because no standard for either exists yet.
 
@@ -60,13 +60,15 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
 ## Steps
 
-1. **Set the target.** `<session-cwd>/figma_snapshots/<YYYY-MM-DD>/`, using today's date. `<session-cwd>` is **the user's working directory for this session** — the project folder the conversation started in, the one `pwd` prints before this skill touches anything. Run `pwd` and use what it returns; do not reconstruct the path from memory. Create `figma_snapshots/` there if it does not exist.
+1. **Set the target.** `~/Code/ds-inventory/snapshots/figma/<YYYY-MM-DD>/`, using today's date. Create the folder if it does not exist.
 
-   **`<session-cwd>` is never the skill's own folder.** The skill is installed somewhere else entirely — a plugin folder, `~/.claude/skills/`, a `dist/*.skill` bundle — and a snapshot written next to `SKILL.md` is a snapshot inside a tool, where no consumer will ever look and where it may be wiped on the next install. The same goes for the scratchpad and for any temporary directory: those are for working files, and a snapshot is the deliverable.
+   That is an absolute path on purpose, and it changed on 2026-08-23. This skill used to write `figma_snapshots/` into whatever directory the session started in, on the reasoning that the user chooses where a capture lands by choosing where to start. There is now one place captures go — `ds-inventory/snapshots/`, holding `figma/`, `web/` and `app/` beside the tooling that reads them — so the choice no longer exists, and offering it only produced captures in folders nothing reads.
 
-   For the same reason, **never `cd` anywhere while running this skill**, least of all into the skill folder to shorten a `node scripts/...` command. Stay in `<session-cwd>` and call every script by its full path from the skill folder, as the examples below do. A `cd` that moves the working directory is exactly how a capture ends up beside the tool instead of beside the data.
+   **Never write a snapshot next to the skill.** The skill is installed somewhere else entirely — a plugin folder, `~/.claude/skills/`, a `dist/*.skill` bundle — and a snapshot written beside `SKILL.md` is a snapshot inside a tool, where no consumer will look and where the next install may wipe it. The same goes for the scratchpad and any temporary directory: those are for working files, and a snapshot is the deliverable.
 
-   That is the whole rule. Always a folder named `figma_snapshots`, always directly inside the session's working directory. Never walk up looking for an existing folder, never write outside that directory, and never pick a different name because the surroundings suggest one. The user chooses where a capture lands by choosing where to start the session, and a skill that second-guesses that is how captures end up somewhere nothing reads.
+   For the same reason, **never `cd` anywhere while running this skill**, least of all into the skill folder to shorten a `node scripts/...` command. Call every script by its full path from the skill folder, as the examples below do.
+
+   **If the target does not exist**, stop and say so rather than creating a `snapshots/figma/` somewhere else. A missing `ds-inventory` means the capture has nowhere to go, and inventing one is how the old rule went wrong.
 
    **Never overwrite an existing snapshot.** If `<YYYY-MM-DD>/` is already there, add a number: `<YYYY-MM-DD>-2`, then `-3`, and so on, taking the first free one. Do the same when only the bundle exists — `ds-snapshot-<YYYY-MM-DD>.bundle.json` beside the folder means that date is taken.
 
@@ -100,14 +102,14 @@ Call `figma_list_open_files` and confirm the paired file is the design system li
 
    When the dependency layer ran, add what is worth acting on: bindings that resolved to nothing, components nested but never walked, and which files were walked. If the repo has a parity audit and the user asked for one, run it now; the snapshot itself is complete either way.
 
-   If the folder holding `figma_snapshots/` carries a README that catalogues the captures, add a row for this one. A catalogue that is only current for some of the snapshots is worse than none.
+   `ds-inventory/snapshots/README.md` catalogues the captures. Add a row for this one. A catalogue that is only current for some of the snapshots is worse than none.
 
 ## Sharing a snapshot as one file
 
 `scripts/to-bundle.mjs` packs a validated snapshot into a single JSON file, for uploading to a tool, attaching to a message, or handing to another agent:
 
 ```bash
-node <skill>/scripts/to-bundle.mjs figma_snapshots/<YYYY-MM-DD>
+node <skill>/scripts/to-bundle.mjs ~/Code/ds-inventory/snapshots/figma/<YYYY-MM-DD>
 ```
 
 `<skill>` is the full path to this skill's folder, and the snapshot path is relative to the session's working directory — so run it from there rather than moving into the skill folder.
@@ -116,14 +118,14 @@ It is a container, not a second format. Each file's content sits verbatim under 
 
 `scripts/from-bundle.mjs <bundle.json> <dir>` restores the folder byte for byte, so a shared bundle can be validated with the same validator as a fresh export. A consumer that only reads the bundle needs nothing but `bundle.files`.
 
-The bundle is written **outside** the snapshot folder. The contract lists every file a snapshot may contain and a bundle is not one of them, so never write one into `figma_snapshots/<date>/`.
+The bundle is written **outside** the snapshot folder. The contract lists every file a snapshot may contain and a bundle is not one of them, so never write one into `snapshots/figma/<date>/`.
 
 ## Converting a snapshot to a flat graph
 
 `scripts/to-ds-graph.mjs` converts a validated snapshot into a flat `graph.json` of nodes and links:
 
 ```bash
-node <skill>/scripts/to-ds-graph.mjs figma_snapshots/<YYYY-MM-DD> graph.json
+node <skill>/scripts/to-ds-graph.mjs ~/Code/ds-inventory/snapshots/figma/<YYYY-MM-DD> graph.json
 ```
 
 It needs the dependency layer. Without it there are no links to draw, and the script says so and stops.

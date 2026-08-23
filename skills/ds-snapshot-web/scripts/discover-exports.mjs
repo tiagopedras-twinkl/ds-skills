@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * discover-exports.mjs — the code's own list of components, modules and icons
- * for ds-web-snapshot, replacing a caller-supplied list as the thing Steps 1-4
+ * for ds-snapshot-web, replacing a caller-supplied list as the thing Steps 1-4
  * are run against.
  *
  * A component/module/icon "exists" here if it is reachable through the real

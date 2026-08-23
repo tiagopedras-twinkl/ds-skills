@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Validates a parity run against ds-inventory/parity/CONTRACT.md, and the rules
-// that produced it against reality. Ships with the ds-parity-run skill, beside
+// Validates a parity run against ds-inventory/rules/parity-contract.md, and the rules
+// that produced it against reality. Ships with the ds-parity-snapshot skill, beside
 // the scorer whose output it checks.
 //
 // The check that earns this script is the dead-rule warning. An exception that
@@ -9,7 +9,7 @@
 // excusing nothing while the renamed axis goes unscored.
 //
 // Usage, run from ds-inventory:
-//   node <ds-skills>/skills/ds-parity-run/scripts/validate-parity.mjs \
+//   node <ds-skills>/skills/ds-parity-snapshot/scripts/validate-parity.mjs \
 //     <run-dir> <rules-file> <records-dir>
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
@@ -82,7 +82,7 @@ if (previous) {
     const sameVersion = prev.rulesVersion === run.inputs?.rulesVersion;
     if (!sameHash && sameVersion)
       err(
-        `rules changed since ${previous} (${prev.rulesHash} → ${run.inputs.rulesHash}) but rulesVersion is still ${run.inputs.rulesVersion} — bump it in parity/rules.yaml, or the two runs cannot be compared`
+        `rules changed since ${previous} (${prev.rulesHash} → ${run.inputs.rulesHash}) but rulesVersion is still ${run.inputs.rulesVersion} — bump it in decisions/parity-rules.yaml, or the two runs cannot be compared`
       );
     if (sameHash && !sameVersion)
       warn(`rulesVersion moved ${prev.rulesVersion} → ${run.inputs.rulesVersion} since ${previous} but the rules are identical`);
