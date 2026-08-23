@@ -209,10 +209,18 @@ node skills/ds-design-md/scripts/validate-design-md.mjs DESIGN-example.md
 
 It is not a full YAML/Markdown parser — it checks frontmatter keys are present and non-empty, `components:` entries reference tokens rather than raw hex, the required body sections exist, and sections that are present appear in the spec's canonical order. Exits 0 with warnings allowed, 1 on a real structural error.
 
-## ds-parity-snapshot
+## ds-process-snapshots
+
+Turns the captures into everything derived from them: rebuild the records, validate,
+rebuild the dependency edges, cross-check them against `ds-graph`, score parity, report
+what changed. The parity scorer folded in here on 2026-08-23 — it was a separate
+`ds-parity-snapshot` skill until then, which meant two skills answered "re-score parity"
+and a capture could be processed with the scoring step quietly skipped.
+
+### Scoring parity
 
 Scores how closely the design system matches what is built, from the snapshots the
-other skills produce.
+capture skills produce.
 
 Parity is a relationship between two things, never a property of either one, so
 everything is scored per surface pair — Figma against web, Figma against mobile,
@@ -232,10 +240,12 @@ Matching happens option by option rather than choice-set by choice-set. Figma's
 describe the same thing at different granularities, so insisting the sets line up
 first threw away answers that were already there.
 
-Output is `ds-inventory/parity/runs/<date>/` — `parity.json` for the inspector,
-`findings.md` for a person. The contract that defines every value is
-`ds-inventory/parity/CONTRACT.md`, and the rules and declared exceptions are
-`ds-inventory/parity/rules.yaml`, which is hand-owned and which no tool writes.
+Output is `ds-inventory/generated/parity/<date>/` — `parity.json` for the inspector,
+`findings.md` for a person — mirrored into `ds-inventory/snapshots/parity/<date>/`. The
+contract that defines every value is `ds-inventory/rules/parity-contract.md`, active
+version 1.2.0, and the rules and declared exceptions are
+`ds-inventory/decisions/parity-rules.yaml`, which is hand-owned and which no tool
+writes.
 
 The scorer and its validator ship with this skill, in `scripts/`. Only the
 contract, the rules and the runs live in `ds-inventory` — everything a person

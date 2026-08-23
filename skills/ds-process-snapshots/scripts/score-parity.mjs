@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Scores design/code parity per pair, per check, against the contract in
-// ds-inventory/rules/parity-contract.md. Ships with the ds-parity-snapshot skill rather
+// ds-inventory/rules/parity-contract.md. Ships with the ds-process-snapshots skill rather
 // than with the data it reads: the contract, the rules and the runs are
 // ds-inventory's, the machinery that applies them is the skill's. Every path it
 // touches arrives as an argument, so it never assumes where it was installed.
@@ -12,7 +12,7 @@
 // is matched against the whole pool of code settings and their values instead.
 //
 // Usage, run from ds-inventory:
-//   node <ds-skills>/skills/ds-parity-snapshot/scripts/score-parity.mjs \
+//   node <ds-skills>/skills/ds-process-snapshots/scripts/score-parity.mjs \
 //     <figma-dir> <web-dir> <app-dir> <records-dir> <rules-file> <out-dir> \
 //     [--mirror <second-out-dir>] [id ...]
 //

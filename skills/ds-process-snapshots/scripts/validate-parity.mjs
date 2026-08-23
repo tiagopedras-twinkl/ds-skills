@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Validates a parity run against ds-inventory/rules/parity-contract.md, and the rules
-// that produced it against reality. Ships with the ds-parity-snapshot skill, beside
+// that produced it against reality. Ships with the ds-process-snapshots skill, beside
 // the scorer whose output it checks.
 //
 // The check that earns this script is the dead-rule warning. An exception that
@@ -9,7 +9,7 @@
 // excusing nothing while the renamed axis goes unscored.
 //
 // Usage, run from ds-inventory:
-//   node <ds-skills>/skills/ds-parity-snapshot/scripts/validate-parity.mjs \
+//   node <ds-skills>/skills/ds-process-snapshots/scripts/validate-parity.mjs \
 //     <run-dir> <rules-file> <records-dir>
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
